@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+'''Generate POTCAR files '''
 import sys, os
 from potcar import *
 

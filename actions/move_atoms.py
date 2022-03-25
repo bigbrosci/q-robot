@@ -10,6 +10,8 @@ You can use this script for the following cases:
     
 Remember:
 The coordinates of the copied atoms need to be modified when the surface in two slabs are different.    
+add.py can do the similar thing.
+
 '''
 
 import sys 

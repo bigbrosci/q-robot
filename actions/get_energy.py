@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import sys 
 from gpm import *
-
+'''Get infor from Gaussian log file'''
 log_file = sys.argv[1]
 dict_infor = get_infor_from_log(log_file)
 for key, val in dict_infor.items():

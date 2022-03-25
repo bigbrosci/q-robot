@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+'''Delete atoms from POSCAR '''
 import sys
 from lattice import *
 

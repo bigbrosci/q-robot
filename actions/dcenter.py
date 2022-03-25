@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 #Writen By Qiang 
+# Get the dband center using the XXX.dat from dos_extract.py script
 import numpy as np
 import sys
 file_in = sys.argv[1]

@@ -7,25 +7,6 @@ from  ase.io import write
 from optparse import OptionParser
 parser = OptionParser()
 
-# parser.add_option("-A",
-#                   type = 'string', dest="file_1", default="POSCAR", 
-#                   help=" atoms in File_1 will be replaced")
-
-# parser.add_option("-B",
-#                   type = 'string', dest="file_2", default="POSCAR",
-#                   help=" atoms in File_2 will be used to replace atoms in file_1")
-
-# parser.add_option("-i", dest="selected_1", nargs = '+', 
-#                   help="select atoms to be replaced in file_1")
-
-# # parser.add_option("-s",
-# #                   type = "int", dest="selected_2",
-# #                   action="store", 
-# #                   help="select the corresponding atoms  in file_2")
-
-# (options, args) = parser.parse_args()
-
-
 
 import argparse
 

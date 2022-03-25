@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 from lattice import *
 import sys 
 

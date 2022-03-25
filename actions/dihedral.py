@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Wed Jul 17 15:06:37 2019
-
+Calculate the dihedral angle 
 @author: qiang
 """
 

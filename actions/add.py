@@ -1,7 +1,7 @@
 #!/usr/bin/env python3 
 # -*- coding: utf-8 -*-
 '''
-This script is used to copy atoms from one POSCAR to the  other POSCAR file.
+This script is used to copy atoms from one POSCAR to another POSCAR file.
 1) the action is similar to move_atom.py
 2) move_atoms.py only copy the atoms to the end of the POSCAR, this script can merge the duplicated atoms.
 C H O N 
@@ -29,7 +29,6 @@ else:
 lines_f = read_car(file_from)[0]
 atom_list = get_atom_list(lines_f, atom_s)
 ele_list, ele_num, line_atoms, coord_s = get_selected_lines(lines_f, atom_list)
-#print(ele_list)
 lines_t = read_car(file_to)[0]
 #
 out_name = 'POSCAR_add'

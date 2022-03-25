@@ -2,11 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Wed Jun 24 18:49:32 2020
-
 @author: qli
-"""
-
-""" 
 https://wiki.fysik.dtu.dk/ase/ase/build/build.html?highlight=bulk
 """
 
