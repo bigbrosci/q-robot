@@ -1,0 +1,52 @@
+#!/bin/bash
+# 
+# Generates the POSCAR of a dimer calculation from the non mass-weighted Hessian matrix
+# Rodrigo García-Muelas
+# November 14th, 2014. Tarragona.
+# 
+# Use with VASP 5.x or higher
+# 
+# INPUT
+# $1 Path of the POSCAR file containing the coordinates
+# $2 Path of the OUTCAR file containing the frequencies of the structure
+# $3 <OUTPUT> POSCAR file
+# 
+
+# PART 0 - SECURITY CHECKS
+
+if [ -e $3 ] ; then
+echo "Warning! $3 already exist. Overwrite? (y/Y for yes)"
+read  overwrite
+case $overwrite in
+y|Y|Yes|yes|YES) echo "$3 will be overwriten"          ;;
+*)               echo "No actions taken "     ; exit 1 ;;
+esac
+fi
+
+IBRION=`grep IBRION $2 | awk '{print $3}'`
+if  [[  $IBRION -gt "8" || $IBRION -lt "5" ]] ; then
+echo "$2 is not an OUTCAR of a frequency job."
+echo "No actions taken" ; exit 1 ; fi
+
+# PART 1 - READ POSCAR AND PREPARE INPUTS 
+
+cp $1 diagonalizer_poscar.tmp 
+
+# PART 2 - READ OUTCAR 
+
+grep "Degrees of freedom DOF " $2 > temp01.tmp
+freedom=`awk '{print $6}' temp01.tmp` 
+echo "$freedom" > diagonalizer_matrix.tmp
+
+grep -A $(($freedom+2)) 'SECOND DERIVATIVES' $2 > temp02.tmp
+cut -d ' ' -f3- temp02.tmp > temp03.tmp
+tail -n $freedom temp03.tmp >> diagonalizer_matrix.tmp
+
+# PART 3 - DIAGONALIZE 
+/home/qli/bin/dimerdiag 
+
+# PART 4 - CLEAN
+head -n 9 $1 > $3
+cat    diagonalizer_taildm.tmp >> $3
+mv -f  diagonalizer_output.tmp eigenvectors.dat
+#rm -fv *.tmp

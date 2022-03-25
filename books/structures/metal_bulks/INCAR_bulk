@@ -1,0 +1,28 @@
+System = Bulk 
+NWRITE =      0
+ISTART =     1 
+GGA= PE
+
+Electronic Relaxation
+ENCUT  = 700
+EDIFF  = 1E-05
+LREAL=Auto
+NELM=80
+
+EDIFFG =  -0.015
+IBRION =  2
+POTIM = 0.10
+
+ISMEAR = 1
+SIGMA = 0.1 
+ALGO = Fast
+
+LWAVE = .TRUE.
+
+ISIF=3
+# Electronic Cal 
+LAECHG=.TRUE.
+LCHARG = .TRUE.
+LORBIT = 11
+NEDOS = 3000
+NSW = 1

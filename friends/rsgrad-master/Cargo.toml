@@ -1,0 +1,38 @@
+[package]
+name = "rsgrad"
+version = "0.3.4"
+authors = ["Ionizing <PeterSmith_9@outlook.com>"]
+edition = "2018"
+
+[[bin]]
+name = "rsgrad"
+path = "src/main.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rayon = "1"
+regex = "1"
+itertools = "0.10"
+structopt = "0.3"
+colored = "2"
+log = "0.4"
+env_logger = "0.8"
+ndarray = "0.15"
+anyhow = "1.0"
+flate2 = "1.0"
+config = { git = "https://github.com/mehcode/config-rs", rev = "68e00251318cc17b1ccfa227f1b108ccab22d5de"}
+directories = "4.0"
+serde = "1.0"
+plotly = { version = "0.7", features = ["plotly_ndarray"] }
+toml = "0.5"
+indexmap = { version = "1.8", features = ["serde"] }
+
+[dev-dependencies]
+tempdir = "0.3"
+
+
+[profile.release]
+incremental = true
+lto = true
+opt-level = 3
