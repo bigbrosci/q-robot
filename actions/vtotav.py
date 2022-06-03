@@ -93,7 +93,7 @@ else:
 a = (idir+1)%3
 b = (idir+2)%3
 # At each point, sum over other two indices
-average = np.zeros(ngridpts[idir],np.float)
+average = np.zeros(ngridpts[idir],np.float64)
 for ipt in range(ngridpts[idir]):
     if direction=="X":
         average[ipt] = potl[ipt,:,:].sum()
