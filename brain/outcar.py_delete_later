@@ -29,13 +29,13 @@ import os
 import numpy as np
 
 
-if os.path.isfile('OUTCAR'):
-    f = open('OUTCAR')
-    lines_o = f.readlines()
-    f.close()
-else:
-    print('No OUTCAR in Current Path. Bye!')
-    exit()    
+#if os.path.isfile('OUTCAR'):
+#    f = open('OUTCAR')
+#    lines_o = f.readlines()
+#    f.close()
+#else:
+#    print('No OUTCAR in Current Path. Bye!')
+#    exit()    
 
 ## The following look_up parameters are listed by their sequence in the OUTCAR file
 
@@ -94,10 +94,9 @@ def get_dict_line(lines_o):
             if k in line: 
                 v.append(num)            
     return dict_line 
-
-dict_line = get_dict_line(lines_o)
-
-def get_potcars(look = look_pot):
+        
+def get_potcars(lines_o, look = look_pot):
+    dict_line = get_dict_line(lines_o)
     infor_l = []
     for i in dict_line.get(look_pot):
         infor_l.append(lines_o[i].strip().split(':')[1].strip())    
@@ -106,7 +105,8 @@ def get_potcars(look = look_pot):
 #potcars = get_potcars()
 #print(potcars)      
     
-def get_incar():
+def get_incar(lines_o):
+    dict_line = get_dict_line(lines_o)
     def analyze_incar(lines):
         dict_incar = {}
         for line in lines:
@@ -142,7 +142,8 @@ def get_incar():
 #dict_incar = get_incar(lines_o)
 #print(dict_incar)
 
-def get_volume_vectors(look_vectors=look_vectors):
+def get_volume_vectors(lines_o, look_vectors=look_vectors):
+    dict_line = get_dict_line(lines_o)
     volume_lines = dict_line.get(look_vectors)[-1]
     volume       = float(lines_o[volume_lines+3].strip().split(':')[1].strip())
     va           = [float(i) for i in lines_o[volume_lines+5].split()[0:3] ]
@@ -153,13 +154,15 @@ def get_volume_vectors(look_vectors=look_vectors):
     return vector, length_abc, volume
 #print(get_volume_vectors(look_vectors))
 
-def get_kpoints(look_kpoints=look_kpoints):
+def get_kpoints(lines_o, look_kpoints=look_kpoints):
+    dict_line = get_dict_line(lines_o)
     line_kpoints = dict_line.get(look_kpoints)[0]
     kpoints      = lines_o[line_kpoints].split()[1]
     return  kpoints
 #print(get_kpoints())
 
-def get_position(look_position = look_position):
+def get_position(lines_o, look_position = look_position):
+    dict_line = get_dict_line(lines_o)
     line_position_start  =  dict_line.get(look_position)[-1]
     separate_num    = dict_line.get(look_separate)
     for num, line_num in enumerate(separate_num):
@@ -171,7 +174,8 @@ def get_position(look_position = look_position):
         cartesian_corrd.append(i.split()[0:3])
     return cartesian_corrd
 
-def get_iteration_infor():
+def get_iteration_infor(lines_o):
+    dict_line = get_dict_line(lines_o)
     lines_iteration = dict_line.get(look_iteration)
     lines_time_ele_raw  = dict_line.get(look_time_ele)
     lines_time_ion  = dict_line.get(look_time_ion)
@@ -185,19 +189,22 @@ def get_iteration_infor():
         ele_time    = float(lines_o[lines_time_ele[num]].split()[-1])
         print(ionic_step, ele_step, ele_time) 
 
-def get_fermi():
+def get_fermi(lines_o):
+    dict_line = get_dict_line(lines_o)
     line_fermi = dict_line.get(look_fermi)[-1]
     e_fermi    = lines_o[line_fermi].split()[2]
     return e_fermi
 
-def get_vacuum():
+def get_vacuum(lines_o):
+    dict_line = get_dict_line(lines_o)
     line_vacuum = dict_line.get(look_vacuum)[-1]     
     e_vacuums   = lines_o[line_vacuum].split()[-2:]
     vacuum_up, vacuum_dn = e_vacuums
     return vacuum_up, vacuum_dn
 
-def get_freq():
+def get_freq(lines_o):
     '''Imaginary Frequencies are not concluded '''
+    dict_line = get_dict_line(lines_o)
     lines_freq = dict_line.get(look_freq)
     nu  = []
     zpe = []
@@ -207,19 +214,20 @@ def get_freq():
         zpe.append(float(line_ele[9]))
     return nu, zpe
         
-def get_freq_i():
+def get_freq_i(lines_o):
     '''Only consider the Imaginary Frequencies'''
+    dict_line = get_dict_line(lines_o)
     lines_freq_i = dict_line.get(look_freq_i)
-    nu   = []
+    nu     = []
     zpe = []
     for i in lines_freq_i:
         line_ele = lines_o[i].split()
         nu.append(float(line_ele[6]))
         zpe.append(float(line_ele[8]))
-    #print(nu, zpe)
     return nu, zpe
 
-def converge_or_not():
+def converge_or_not(lines_o):
+    dict_line = get_dict_line(lines_o)
     line_converge  =  dict_line.get(look_converge)
     is_converge_or_not = False
     if len(line_converge) == 1:
@@ -227,7 +235,8 @@ def converge_or_not():
     return is_converge_or_not   
 #print converge_or_not()    
     
-def get_mag():
+def get_mag(lines_o):
+    dict_line = get_dict_line(lines_o)
     line_mag_start = dict_line.get(look_magnetization)[-1] + 4 
     line_mag_end = 1
     for num, line in enumerate(lines_o[line_mag_start:]):
@@ -242,13 +251,15 @@ def get_mag():
     return dict_mag    
 #print(get_mag())
     
-def get_vdw():
+def get_vdw(lines_o):
+    dict_line = get_dict_line(lines_o)
     line_vdw  = dict_line.get(look_vdw)[-1]
     vdw = lines_o[line_vdw-1].rstrip()
     return vdw
 #get_vdw()    
     
-def get_energy():
+def get_energy(lines_o):
+    dict_line = get_dict_line(lines_o)
     line_energy = dict_line.get(look_energy)[-1]
     energy = lines_o[line_energy].rstrip().split()[-1]
     return float(energy)
