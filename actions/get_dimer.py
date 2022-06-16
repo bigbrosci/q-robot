@@ -28,7 +28,7 @@ from sys import exit
 
 # os.chdir('/home/win.udel.edu/qli/Desktop/freq/')
 
-model = read('POSCAR')
+model = read('POSCAR_relax') ### POSCAR_relax is the POSCAR before freq calculations, that means the some atoms are not fixed.
 model_positions = model.get_positions()
 model.write('POSCAR_dimer', vasp5=True)
 

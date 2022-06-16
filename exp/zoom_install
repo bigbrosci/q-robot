@@ -1,0 +1,3 @@
+sudo apt-get install libxcb-xtest0
+sudo dpkg -i zoom_amd64.deb 
+#sudo apt --fix-broken install

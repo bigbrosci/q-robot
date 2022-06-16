@@ -17,7 +17,7 @@ else:
 lines = read_car('POSCAR')[0]
 atom_list = get_atom_list(lines, atom_s)
 
-dict_mag = get_mag(lines_o)
+dict_mag = get_mag()
 for atom in atom_list:
     print(atom, '\t', '\t'.join([str(i) for i in dict_mag.get(atom)]))
 

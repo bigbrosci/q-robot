@@ -14,7 +14,7 @@ import os, sys
 Important: Atom index starts from 0
 '''
 atom_A, atom_B = [int(i) for i in sys.argv[1:3]]
-model = read('POSCAR')
+model = read('CONTCAR')
 positions = model.get_positions()
 dis_AB_1 = model.get_distance(atom_A, atom_B, mic=True)
 dis_AB_2 = model.get_distance(atom_A, atom_B, mic=False)
