@@ -1,0 +1,73 @@
+STATUS:Searching for applets
+STATUS:Creating menu items
+MSG   :Add menu Edit::New
+MSG   :Add menu Structure::Window
+MSG   :Add menu Structure::Control
+MSG   :Add menu Electronic::DOS + bands
+MSG   :Add menu Electronic::Local DOS+bands control
+MSG   :Add menu Structure::Export
+MSG   :Add menu Edit::Multiply cell
+MSG   :Add menu Edit::Edit sub-Z-matrix
+MSG   :Add menu Electronic::View k-points
+MSG   :Add menu Edit::Info
+MSG   :Add menu Edit::Move atoms
+MSG   :Add menu Structure::Show (old)
+MSG   :Add menu Electronic::STM Control
+MSG   :Add menu Mechanics::Phonon dispersion
+MSG   :Add menu Structure::Show/hide atoms
+MSG   :Add menu Database::Query
+MSG   :Add menu Electronic::STM Window
+MSG   :Add menu Convergence::Selected forces
+MSG   :Add menu Convergence::Energy
+MSG   :Add menu Structure::Measure
+MSG   :Add menu Structure::Lattice
+MSG   :Add menu Database::Commit
+MSG   :Add menu Mechanics::Phonons k-points path
+MSG   :Add menu Edit::Rotate atoms
+MSG   :Add menu Electronic::Local potential
+MSG   :Add menu Edit::Builder
+MSG   :Add menu Mechanics::VAC
+MSG   :Add menu Electronic::Dielectric function
+MSG   :Add menu Convergence::Forces
+STATUS:Initializing toolbar buttons
+STATUS:Initializing selection applet
+STATUS:loading setup
+ERROR : Can not read setup.xml
+STATUS:setup loaded
+STATUS:reading vasprun.xml
+ERROR : Error reading property DOM
+EXCEPT:Traceback (most recent call last):
+          File "/usr/lib/python2.7/dist-packages/p4vasp/Property.py", line 159, in get
+           self.value=self.read()
+          File "/usr/lib/python2.7/dist-packages/p4vasp/Property.py", line 172, in read
+           return apply(self.read_func,(self,))
+          File "/usr/lib/python2.7/dist-packages/p4vasp/SystemPM.py", line 439, in <lambda>
+           read=lambda x:parseXMLfromURL(x.manager.URL))
+          File "/usr/lib/python2.7/dist-packages/p4vasp/util.py", line 460, in parseXMLfromURL
+           return parseXML(url)
+          File "/usr/lib/python2.7/dist-packages/p4vasp/util.py", line 430, in parseXML
+           raise IOError,"No such file or directory: '%s'"%path
+        IOError: No such file or directory: 'vasprun.xml'
+       
+ERROR : Error reading property INCAR
+EXCEPT:Traceback (most recent call last):
+          File "/usr/lib/python2.7/dist-packages/p4vasp/Property.py", line 159, in get
+           self.value=self.read()
+          File "/usr/lib/python2.7/dist-packages/p4vasp/Property.py", line 172, in read
+           return apply(self.read_func,(self,))
+          File "/usr/lib/python2.7/dist-packages/p4vasp/SystemPM.py", line 441, in <lambda>
+           read=lambda x:Incar(x.manager.DOM.getElementsByTagName("incar")[0]))
+        AttributeError: 'NoneType' object has no attribute 'getElementsByTagName'
+       
+ERROR : Error reading property NAME
+EXCEPT:Traceback (most recent call last):
+          File "/usr/lib/python2.7/dist-packages/p4vasp/Property.py", line 159, in get
+           self.value=self.read()
+          File "/usr/lib/python2.7/dist-packages/p4vasp/Property.py", line 172, in read
+           return apply(self.read_func,(self,))
+          File "/usr/lib/python2.7/dist-packages/p4vasp/SystemPM.py", line 447, in <lambda>
+           read=lambda x:x.manager.INCAR["SYSTEM"])
+        TypeError: 'NoneType' object has no attribute '__getitem__'
+       
+STATUS:reading vasprun.xml OK
+STATUS:OK
