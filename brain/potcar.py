@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 import os 
-from data import get_potcar_data
-#abs_path = os.path.abspath('')
-#user_id = os.path.expanduser('~').split('/')[-1]
-#print(user_id)
 
-elements = get_potcar_data().keys()
+def get_potcar_data():
+    home = os.path.expanduser('~')
+    data_potcars_file = home + '/bin/q-robot/books/potpaw_PBE.54/data_potcars'
+    file_in = open(data_potcars_file, 'r')
+    data = file_in.read()
+    file_in.close()
+    return eval(data)    
+# elements = get_potcar_data().keys()
 
 def concatenate(ele_list):
+    ''' cat POTCAR1 POTCAR2 >> POTCAR '''
     home = os.path.expanduser('~')
-    potcar_path = home + '/bin/q-robot/books/potpaw_PBE.52'
+    potcar_path = home + '/bin/q-robot/books/potpaw_PBE.54'
     f_out = open('POTCAR', 'w')
     for i in ele_list:
         print('\nAdd %s to the POTCAR' %(i))
@@ -74,19 +78,20 @@ def get_potcars_infor(version):
     '''Generate the data_potcars file for Q-robot to remember.''' 
     'version is the suffix in the potcar folders  of  potpaw_PBE.52, so it should be 52 or 54'
     home = os.path.expanduser('~')
-    potcar_path = home + '/bin/Q_robot/books/potpaw_PBE.' + version + '/'
+    potcar_path = home + '/bin/q-robot/books/potpaw_PBE.' + version + '/'
     elements = [f for f in os.listdir(potcar_path) if os.path.isdir(potcar_path + f)]
     dict_potcars = {}
     for i in elements:
         potcar = potcar_path + '/' + i + '/POTCAR'
         dict_i = get_potcar_infor(potcar)
         dict_potcars[i] = dict_i    
-    dict_name = home + '/bin/Q_robot/books/potpaw_PBE.' + version + '/data_potcars'
+    dict_name = home + '/bin/q-robot/books/potpaw_PBE.' + version + '/data_potcars'
     file_out = open(dict_name, 'w')
     file_out.write(str(dict_potcars))
     return dict_potcars
 ### Only run it when you update your potcars. 
 #get_potcars_infor('52')
+#get_potcars_infor('54') 
     
 def read_potcar(potcar):
     ''' Print out the basic information of POTCAR in the current folder'''

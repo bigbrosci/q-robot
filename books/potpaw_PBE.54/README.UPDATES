@@ -1,0 +1,187 @@
+if you use any of these potentials you need to put a reference to
+
+G. Kresse, and J. Joubert, 
+"From ultrasoft pseudopotentials to the projector augmented wave method",
+Phys. Rev. B {\bf 59}, 1758 (1999).
+
+
+UPDATES for March 2002 release
+==============================
+
+*4.8.2002 Na core radius reduced
+*4.8.2002 Cs_sv s cutoff reduced
+*4.8.2002 Ga updated, d reference energy set to 0.1 
+*4.8.2002 Sn updated, f reference energy set to -0.2
+*4.8.2002 In NEW generated
+*4.8.2002 Tl NEW generated
+*4.8.2002 Bi NEW generated
+
+*4.8.2002 V  updated, since it had a ghostate in the MD
+*4.8.2002 Ti updated
+*4.8.2002 Sc NEW generated
+*4.8.2002 Y  NEW generated
+
+*4.8.2002 Te d&f potentials softened (23 instead 7)
+*4.8.2002 I  d&f potentials softened (23 instead 7)
+         both yield now reliable lattice constants
+         at default cutoff
+*4.8.2002 Sn d&f potentials softened (23 instead 7)
+*4.8.2002 mass corrected for Pr
+*4.8.2002 Eu regenerated for 91
+*4.8.2002 Mo_pv potential rengerated since a s ghostate
+          existed above the Fermi-level
+*4.8.2002 Mo potential rengerated since a s ghostate
+          existed above the Fermi-level
+*4.8.2002 Nb_pv potential rengerated since a s ghostate
+          existed above the Fermi-level
+*4.8.2002 Al_h, Si_h, P_h, S_h, Cl_h, Ga_h, Ge_h generated
+
+17.1.2003 Tc, Er_2 generated 
+17.1.2003 default cutoff for Li increased to 140, and softer d
+17.1.2003 P S and Cl: local potential softened and cutoff increased
+20.1.2003 Tm_3 regenerated (ghostate)
+20.1.2003 Hf, Ta, Re and Os generated
+20.1.2003 Os_pv regenerated (ghostate)
+22.1.2003 B_s generated
+24.2.2003 Yb regenereted (old potential was RPBE)
+
+UPDATES since 24Feb03 release (not complete)
+============================================
+11.4.2003 As_d potential generated
+06.2.2004 B_h, C_h, N_h, O_h, F_h and H_h regenerated
+          new versions include partial core corrections
+03.6.2004 Si_h updated, ghoststate in p
+16.8.2004 Al_h removed because of ghostate problem
+10.9.2004 Li_sv updated since LiH dimer description was unsatisfactory
+04.2.2005 Pd_pv_new, Rh_pv_new, Ru_pv_new, Ru_sv, Tc_pv_new, Mo_pv_new generated: 
+          smaller p core radius, f PP as local potential
+04.2.2005 Ag_new, Pd_new, Rh_new, Ru_new, Tc_new updated: f PP as local potential
+04.2.2005 Mo_sv Ru_sv Zn_pv generated
+04.2.2005 Zr_sv_new generated: f local and smaller core radii
+04.2.2005 Sc regenerated: was for 91 instead of PE
+03.3.2005 Ce_h regenerated with improved f and second p projector at 1 eV
+02.3.2006 Mo_sv smaller core radius for d chosen
+
+28.8.2006 Er potential updated, valence corrected, p shifted to 2.0 eV, f radius
+ decreased
+19.9.2006 Na_pv updated because of ghoststate above Fermi level
+04.4.2007 Mg_pv smaller p core radius (1.6) to improve transferability
+
+UPDATES since 20Apr07 release
+=============================
+
+
+20.4.2007 Ag replaced by Ag_new
+20.4.2007 Cu replaced by Cu_new
+20.4.2007 Mg replaced by Mg_new
+20.4.2007 Mo_pv replaced by Mo_pv_new
+20.4.2007 Pt replaced by Pt_new
+20.4.2007 Pd replaced by Pd_new
+20.4.2007 Pd_pv replaced by Pd_pv_new
+20.4.2007 Rh replaced by Rh_new
+20.4.2007 Rh_pv replaced by Rh_pv_new
+20.4.2007 Ru replaced by Ru_new
+20.4.2007 Ru_pv replaced by Ru_pv_new
+20.4.2007 Tc replaced by Tc_new
+20.4.2007 Tc_pv replaced by Tc_pv_new
+20.4.2007 Zr_sv replaced by Zr_sv_new
+25.5.2007 Nb_sv f shell as local potential
+25.5.2007 Y_sv f shell as local potential
+20.4.2007 Ti_sv replaced by Ti_sv_new X
+02.8.2007 V_sv replaced by V_sv_new
+02.8.2007 Cr_pv replaced by Cr_pv_new
+02.8.2007 Mn_pv replaced by Mn_pv_new
+02.8.2007 Fe_pv replaced by Fe_pv_new
+02.8.2007 Co replaced by Co_new
+02.8.2007 Ni replaced by Ni_new
+26.3.2009 Fe_sv updated
+26.3.2009 Fr_sv generated
+26.3.2009 Ra_sv generated
+26.3.2009 Ge_d updated
+26.3.2009 Hf_sv generated
+26.3.2009 Mn_sv generated
+26.3.2009 Po updated
+26.3.2009 Po_d generated
+26.3.2009 Am generated
+26.3.2009 At generated
+26.3.2009 At_d generated
+26.3.2009 Au replaced by Au_new
+26.3.2009 Co_sv generated
+26.3.2009 Cr_sv generated
+26.3.2009 W_pv replaced by W_pv_new
+06.7.2010 Ga_d updated, better high energy scattering (GW ready)
+15.3.2012 Li_sv_GW  3rd s reference energy moved to 13 Ry
+
+GW potentials generated
+
+UPDATES since 19Apr12 release
+=============================
+04.5.2012 Si_GW core radius for first s projector increased back to 1.9
+16.5.2012 La_GW potential generated
+22.6.2012 Bi_d_GW potential updated to include f projectors
+04.7.2012 Zn_pv_GW retired and no longer distributed
+          instead Zn_sv_GW_s (softer Zn_sv_GW potential) mostly identical to Zn_pv_GW distributed
+01.8.2012 H1.25 update of ENMAX = 250 ENMIN = 200
+01.8.2012 Mg default cutoff increased to ENMAX =200 and ENMIN = 100 (compatible to LDA) 
+
+UPDATES since 6Aug12 release
+=============================
+30.11.2012 V_sv_GW updated 3rd p projector moved to 7 eV since old potential failed at large ENCUT
+01.02.2013 Pd_sv_GW included in the distribution
+15.03.2013 Ge_d_GW updated s partial waves: are now normconserving better agreement with Ge_sv_GW
+15.03.2013 Ga_d_GW updated s partial waves: are now normconserving better agreement with Ga_sv_GW
+15.03.2013 In_d_GW updated s partial waves almost normconserving, f scattering included
+15.03.2013 Sn_d_GW updated s partial waves almost normconserving, f scattering included
+15.03.2013 Sb_d_GW updated s partial waves almost normconserving 
+15.03.2013 Cd_pv_GW removed (bad performance) 
+15.03.2013 Cd_sv_GW new reasonably soft GW potential (320 eV) 
+19.03.2013 Si_GW_new s partial waves almost normconserving better agreement with Si_sv_GW
+23.05.2013 C_h_GW commited, almost normconserving partial waves
+03.07.2013 N_h_GW commited, almost normconserving partial waves, s energies changed
+23.05.2013 O_h_GW commited, almost normconserving partial waves
+03.07.2013 F_h_GW commited, almost normconserving partial waves, s energies changed
+31.05.2013 F_h updated, smaller s core radius
+19.06.2013 Rh_sv_GW updated: third p projector at low energies
+21.08.2013 Kr_GW updated, improved s NC, d projectors (previous potential had s ghoststates at high energy)
+21.08.2013 Ar_GW updated, improved s NC
+21.08.2013 Ne_GW updated, smaller p core radius (improved NC)
+13.09.2013 Au_pv_GW removed (unreliable DFT lattice constants)
+13.09.2013 Au_sv_GW added  (2 p core projectors)
+13.09.2013 Cu_pv_GW removed (unreliable DFT lattice constants)
+13.09.2013 Cu_sv_GW added  (2 p core projectors)
+22.11.2013 In_sv_GW revised, d core radius made smaller
+22.11.2013 Sn_sv_GW created
+22.11.2013 Sb_sv_GW created
+22.11.2013 Te_sv_GW created
+22.11.2013 Cd_sv_GW d core radius decreased to 2.0, s almost NC
+25.11.2013 Ga_pv_GW removed (instead new Ga_sv_GW should be used, see below)
+05.12.2013 Y_sv_GW Zr_sv_GW Nb_sv_GW Mo_sv_GW Tc_sv_GW Ru_sv_GW Rh_sv_GW Pd_sv_GW Ag_sv_GW  
+           d core radius decreased to 2.0, s almost NC
+           old potentials are available in _old
+05.12.2013 Sc_sv_GW Ti_sv_GW V_sv_GW Cr_sv_GW Mn_sv_GW Fe_sv_GW Co_sv_GW Ni_sv_GW Cu_sv_GW Zn_sv_GW Ga_sv_GW Ge_sv_GW
+           d core radius decreased to 1.9 a.u., s almost NC
+           old potentials are available in _old
+04.04.2014 Si_h potential added (s core shell is in valence)
+04.04.2014 Pb_sv_GW generated (updated on 14.04.2014)
+14.04.2014 Pb_d_GW smaller s core radius more f projectors
+16.04.2014 Cd_sv_GW generated with more reasonable atomic configuration
+16.04.2014 Hg_sv_GW generated 
+16.04.2014 Tl_d_GW Tl_sv_GW generated
+16.04.2014 Bi_d_GW Bi_sv_GW generated
+16.04.2014 Po_d_GW Po_sv_GW generated
+16.04.2014 At_d_GW At_sv_GW generated
+16.04.2014 Rn_d_GW Rn_sv_GW generated
+16.04.2014 Ne_GW_new moved to Ne_GW (includes f non-locality)
+17.04.2014 At_d removed (too small lattice constant used At_d_GW instead)
+18.04.2014 Pt_pv_GW Rh_pv_GW Ru_pv_GW removed (unreliable DFT lattice constants)
+20.05.2014 F_h_GW updated (smaller partial core radius)
+21.11.2014 Sm potential updated (d ghoststate, no convergence)
+16.01.2015 Hf_sv_GW, f projector places closer to vacuum level to improve f scattering
+27.02.2015 Ne_GW_soft renamed to Ne_s_GW
+
+26.04.2015 Ge_sv_GW updated (RPA convergence) 3rd s channel, 2nd f 6.0 Ry
+11.05.2015 Na_sv_GW updated (smaller core radii but, harder)
+22.05.2015 P_sv_GW_nc updated (smaller local core radius, 3rd p shifted down to 2.7 eV)
+04.09.2015 W_sv generated, W_pv removed because of s ghoststate above E-fermi
+
+
