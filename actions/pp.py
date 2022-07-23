@@ -25,7 +25,8 @@ if len(sys.argv[:]) == 1:
     else: 
         print('%s' %('%' * 40))
         print('\nWARNING!!!'*3 )# * 2 )
-        print('''\nPOTCAR CANNOT be automatically generated due to the missing POSCAR!!!\n
+        print('''
+\nPOTCAR CANNOT be automatically generated due to the missing POSCAR!!!\n
 But you can make it by using command below:\n
 pp.py element1 element2 ....\n''')
         print('%s' %('%' * 40))  

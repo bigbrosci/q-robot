@@ -6,6 +6,8 @@ Written By Qiang
 
 import numpy as np 
 import math 
+import ase 
+from ase.io import read, write
 
 #### Part-0 Dictionaries
 atomic_mass = dict(H=1.01, He=4.00, Li=6.94, Be=9.01, B=10.81, C=12.01,
@@ -32,7 +34,6 @@ atomic_mass = dict(H=1.01, He=4.00, Li=6.94, Be=9.01, B=10.81, C=12.01,
 
 dict_element = {'1':'H','2':'He','3':'Li','4':'Be','5':'B','6':'C','7':'N','8':'O','9':'F','10':'Ne','11':'Na','12':'Mg','13':'Al','14':'Si','15':'P','16':'S','17':'Cl','18':'Ar','19':'K','20':'Ca','21':'Sc','22':'Ti','23':'V','24':'Cr','25':'Mn','26':'Fe','27':'Co','28':'Ni','29':'Cu','30':'Zn','31':'Ga','32':'Ge','33':'As','34':'Se','35':'Br','36':'Kr','37':'Rb','38':'Sr','39':'Y','40':'Zr','41':'Nb','42':'Mo','43':'Tc','44':'Ru','45':'Rh','46':'Pd','47':'Ag','48':'Cd','49':'In','50':'Sn','51':'Sb','52':'Te','53':'I','54':'Xe','55':'Cs','56':'Ba','57':'La','58':'Ce','59':'Pr','60':'Nd','61':'Pm','62':'Sm','63':'Eu','64':'Gd','65':'Tb','66':'Dy','67':'Ho','68':'Er','69':'Tm','70':'Yb','71':'Lu','72':'Hf','73':'Ta','74':'W','75':'Re','76':'Os','77':'Ir','78':'Pt','79':'Au','80':'Hg','81':'Tl','82':'Pb','83':'Bi','84':'Po','85':'At','86':'Rn','87':'Fr','88':'Ra','89':'Ac','90':'Th','91':'Pa','92':'U','93':'Np','94':'Pu','95':'Am','96':'Cm','97':'Bk','98':'Cf','99':'Es','100':'Fm','101':'Md','102':'No','103':'Lr','104':'Rf','105':'Db','106':'Sg','107':'Bh','108':'Hs','109':'Mt',}
 dict_element_2 = {v: k for k, v in dict_element.items()}
-
 
 def get_dicts(lines):
     '''Return a dictionary from POSCAR file '''
@@ -63,6 +64,21 @@ def read_car(file_read):
     dict_car1, dict_car2 = get_dicts(lines)
     return lines, dict_car1, dict_car2
 
+def read_car_ase(file_read):
+    '''Return a dictionary from POSCAR file using ASE'''
+    dict_1 = {}
+    dict_2 = {}
+    model = read(file_read, format='vasp')
+    ele_list = model.get_chemical_symbols()
+    ele = list(set(ele_list))    
+    for num, i in enumerate(ele):
+        key = i + '-' + str(num+1)
+        num_i = ele_list.count(i)
+        list_i = [atom.index + 1 for atom in model if atom.symbol == i]
+        dict_1[key] = num_i 
+        dict_2[key] = list_i
+    return model, dict_1, dict_2    
+
 def is_direct_or_not(lines):
     is_direct = True
     is_select = True
@@ -73,9 +89,9 @@ def is_direct_or_not(lines):
     else: 
         is_select = False
 #        start_num = 8
-        print('----------------------------------------------')
-        print( 'Pay Attetion! There is no TTT in the file!   ')
-        print( '---------------------------------------------')
+        print('-'*40)
+        print( 'Warning! There is no TTT in the file!   ')
+        print('-'*40)
         if lines[7].strip()[0].upper()  == 'C':
             is_direct = False 
     return is_direct, is_select
@@ -83,27 +99,21 @@ def is_direct_or_not(lines):
 def get_vectors(lines):
     '''
     Get the lattice vectors to convert the direct to cartesian
-    '''
-#    scale = float(lines[1].strip().split()[0]) 
-    
-###    Not_used_method.
-#    for i in np.arange(2,5):
-#       line = [float(i) for i in lines[i].strip().split()]
-#       a.append(line[0])
-#       b.append(line[1])
-#       c.append(line[2])
-#    vector = np.array([a,b,c]) 
-    
+    '''   
     la1 = np.array([ float(i) for i in lines[2].strip().split() ])
     la2 = np.array([ float(i) for i in lines[3].strip().split() ])
     la3 = np.array([ float(i) for i in lines[4].strip().split() ])
     vector = np.transpose(np.array([la1, la2, la3]))
-    
-    return vector, la1, la2 
+    return vector
+
+def get_vectors_ase(model):
+    cell = np.array(model.get_cell())
+    vector = np.transpose(cell)
+    return vector
 
 def get_abc(lines):
     '''
-    Get the lattice vectors to convert the direct to cartesian
+    Get the lattice information: length in x, y, and z directions, surface area and volume.
     '''
     scale = float(lines[1].strip().split()[0]) 
     la1 = np.array([ float(i) for i in lines[2].strip().split() ])
@@ -112,22 +122,39 @@ def get_abc(lines):
     a_length = np.linalg.norm(la1) * scale 
     b_length = np.linalg.norm(la2) * scale 
     c_length = np.linalg.norm(la3) * scale
-    A = np.cross(la1, la2)[-1]
-    V = np.dot(np.cross(la1, la2), la3)
+    A = np.cross(la1, la2)[-1] # Surface area
+    V = np.dot(np.cross(la1, la2), la3) # Volume 
     return a_length, b_length, c_length, A, V
+
+def get_abc_ase(model):
+    '''
+    Get the lattice information: length in x, y, and z directions, surface area and volume.
+    '''
+    cell = np.array(model.get_cell())
+    a,b,c = model.cell.cellpar()[:3]
+    A = np.cross(cell[0], cell[1])[-1]
+    V = model.get_volume()
+    return a, b, c, A, V
 
 
 def get_coordinate(lines, ele_indice):
     '''
-    Get the atom xyz coordinate from the POSCAR which is in cartesian format
+    Get the atom xyz coordinate from the POSCAR which must be in cartesian format.
     '''
     ele_indice = int(ele_indice) + 8
     coordinate =  np.array([float(i) for i in lines[ele_indice].strip().split()[0:3]])
     return coordinate
 
+def get_coordinate_ase(model,ele_indice):
+    '''
+    Get the atom xyz coordinate from the POSCAR which must be in cartesian format.
+    '''
+    ele_indice = int(ele_indice) - 1  # ASE counts the index from 0
+    coordinate = model.get_positions()[ele_indice]
+    return coordinate
+
 def determinelayers(lines,threshold=0.5):
     layerscount = {}
-#    print(lines)
     line_total = sum([int(i) for i in lines[6].strip().split()]) + 8
     z = [float(lines[i].split()[2]) for i in range(9, line_total+1)]
     seq = sorted(z)
@@ -143,28 +170,6 @@ def determinelayers(lines,threshold=0.5):
             if abs(z[k]-sets[i-1]) <= threshold:
                 layerscount[i].append(k+1)
     return layerscount
-
-
-#def determinelayers(z_cartesian):
-#    seq = sorted(z_cartesian)
-#    min = seq[0]
-#    layerscount = {}
-#    sets = [min]
-#    for j in range(len(seq)):
-#        if abs(seq[j]-min) >= threshold:
-#            min = seq[j]
-#            sets.append(min)
-#
-#    for i in range(1,len(sets)+1):
-#        layerscount[i] = []            
-#        for k in range(len(z_cartesian)):   
-#            if abs(z_cartesian[k]-sets[i-1]) <= threshold:
-#                layerscount[i].append(k)
-#                
-#    return layerscount
-    
-
-
 
 def get_angle(u,v):
     '''
@@ -201,6 +206,14 @@ def get_distance(lines, a, b):
 
     return distance 
 
+
+def get_distance_ase(model, a, b):
+    ''' Get the distance between atom a and b.  a and b are counted starting from 1.'''
+    atom_A = a - 1
+    atom_B = b - 1
+    distance = model.get_distance(atom_A, atom_B, mic=True)
+    return distance
+
 def get_intact_one_atom(lines, A, B):
     '''atom B is the anchoring point'''
     la1, la2 = get_vectors(lines)[1:]
@@ -229,10 +242,11 @@ def get_intact_molecule(lines, atom_list, atom_B):
     return coord_list
 
 def get_distance_direct(a,b):
-    '''print the distance  '''
+    '''print the distance between two coordinates. Here a, and b are coordinates.'''
     vector_ab = a - b  
     distance = np.linalg.norm(vector_ab)
     return distance
+
 
 def get_rotate_infor(lines, raw_infor):   
     '''Along the axis(atom_A, atom_B), rotate atoms by theta angle (in degree).
@@ -355,7 +369,6 @@ def get_atom_list(lines, atom_s):
                         if i == k.split('-')[0]:
                             for ele in v:
                                 atom_list_append(ele)
-        #print('You select atoms:\t %s' %(atom_list))
         return atom_list
 
     atom_selected = []

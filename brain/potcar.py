@@ -2,6 +2,7 @@
 import os 
 
 def get_potcar_data():
+    '''Read the data_potcars file in q-robot/books/potpaw_PBE.54/ '''
     home = os.path.expanduser('~')
     data_potcars_file = home + '/bin/q-robot/books/potpaw_PBE.54/data_potcars'
     file_in = open(data_potcars_file, 'r')
