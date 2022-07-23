@@ -29,7 +29,7 @@ f.close()
 #    Tem = float(sys.argv[1])  # Temperature
 
 if len(sys.argv) == 1:
-    Tem = 298.13
+    Tem = 298.15
 #    sum_pf, TS = cal_entropy(nu_list_simplified, Tem)
 
 elif len(sys.argv) == 2:
@@ -45,7 +45,7 @@ l_s = con.c   # 299792458      # light speed m * s ⁻¹
 beta = 1/(k_b * Tem)
 
 
-dict_incar = get_incar(lines_o)
+dict_incar = get_incar()
 if dict_incar.get('IBRION') not in ['5', '6', '7', '8']:
     print('This is not frequency calculation!')
     exit()    
@@ -53,13 +53,13 @@ if dict_incar.get('IBRION') not in ['5', '6', '7', '8']:
 
 def check_freq():
     nwrite = dict_incar.get('NWRITE')
-    nu_list, zpe_list = get_freq(lines_o)
+    nu_list, zpe_list = get_freq()
 #    if nwrite == 3:
 #        '''For NWRITE = 3, each frequency is written twice in OUTCAR.   '''
 #        nu_list = list(set(nu_list)) 
 #        zpe_list = list(set(zpe_list))
-    nu_list = list(set(nu_list)) 
-    zpe_list = list(set(zpe_list))
+    set(nu_list) 
+    set(zpe_list)
     return nu_list, zpe_list
 
 def get_pf(nu): 
@@ -87,18 +87,17 @@ def cal_entropy(nu_list, Tem):
     TS = Tem * sum_pf  # entropy contribution: T * S     
     return sum_pf, TS
 
-
-
 nu_list, zpe_list = check_freq()
 E_zpe = sum(zpe_list)/2000  # calculate ZPE 1) Sum(hv)/2  2) convert meV to eV
-nu_list_simplified = simplify(nu_list)
-sum_pf, TS = cal_entropy(nu_list_simplified, Tem)
+
+#nu_list_simplified = simplify(nu_list)
+#sum_pf, TS = cal_entropy(nu_list_simplified, Tem)
 #### Unsimplified TS
-#sum_pf_raw, TS_raw = cal_entropy(nu_list, Tem)
-#print('S:\t%6.7f\tTS:\t%6.4f eV\tE_ZPE:\t%6.4f eV' %(sum_pf_raw, TS_raw, E_zpe))
+#For  Gas
+sum_pf, TS = cal_entropy(nu_list[:-3], Tem)
+#For Surface
+sum_pf, TS = cal_entropy(nu_list, Tem)
 
-print('Temperature (K):\t%s\tS (ev/K):\t%6.7f\tTS (eV):\t%6.4f \tE_ZPE (eV):\t%6.4f' %(Tem, sum_pf, TS, E_zpe))
+print('Temperature (K):\t%s\tS (eV/K):\t%6.7f\tTS (eV):\t%6.4f \tE_ZPE (eV):\t%6.4f' %(Tem, sum_pf, TS, E_zpe))
 
-f = open('OUTCAR')
-lines_o = f.readlines()
-f.close()
+

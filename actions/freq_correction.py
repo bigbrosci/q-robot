@@ -17,7 +17,6 @@ model = read('POSCAR')
 model_positions = model.get_positions()
 print('Read POSCAR DONE >>>\t')
 #Read OUTCAR and get the line number of the largest imaginary frequency
-
 print('Read OUTCAR >>>\t')
 l_position = 0
 with open('OUTCAR') as f_in:
