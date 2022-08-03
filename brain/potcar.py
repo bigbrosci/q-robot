@@ -71,7 +71,7 @@ def get_multiple_potcar_infor(potcar):
     return dict_potcars, ele_list
 
 def get_potcars_infor(version):    
-    '''Generate the data_potcars file for Q-robot to remember.''' 
+    '''Generate the data_potcars file for Q-robot to learn.''' 
     'version is the suffix in the potcar folders  of  potpaw_PBE.52, so it should be 52 or 54'
     home = os.path.expanduser('~')
     potcar_path = home + '/bin/Q_robot/books/potpaw_PBE.' + version + '/'
