@@ -45,6 +45,9 @@ l_s = con.c   # 299792458      # light speed m * s ⁻¹
 beta = 1/(k_b * Tem)
 
 
+#    x_i = h_p * float(nu) * l_s * / (k_b * Tem) 
+
+
 dict_incar = get_incar()
 if dict_incar.get('IBRION') not in ['5', '6', '7', '8']:
     print('This is not frequency calculation!')
@@ -83,7 +86,7 @@ def cal_entropy(nu_list, Tem):
     '''  Calculate the Entropy S:
         1) i * 100: convert cm-1 to m-1
         2) /1000/96.486 : convert J * K⁻¹ * mol⁻¹ to eV * K⁻¹ from http://web.utk.edu/~rcompton/constants '''
-    sum_pf =  sum(get_pf(i*100) for i in nu_list)  / 1000 / 96.485
+    sum_pf =  sum(get_pf(i*100) for i in nu_list)  / (1000 *  96.485)
     TS = Tem * sum_pf  # entropy contribution: T * S     
     return sum_pf, TS
 

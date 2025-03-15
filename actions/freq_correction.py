@@ -38,9 +38,9 @@ vib_dis = np.array(vib_dis)
 
 print('Read OUTCAR DONE >>>\t')         
 
-print("Start Correcting the xyz coordinates with a factor of 0.3")
+print("Start Correcting the xyz coordinates with a factor of 0.1")
 # 0.3 is the displacement factor to add to the poscar.
-new_positions = model_positions + vib_dis * 0.3 
+new_positions = model_positions + vib_dis * 0.1 
 model.positions = new_positions
 write('POSCAR_corrected', model, vasp5=True)
 print("Done! Output file is named as: POSCAR_corrected")

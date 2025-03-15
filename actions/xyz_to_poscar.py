@@ -14,7 +14,7 @@ xyz_in = sys.argv[1]
 
 mol = read(xyz_in)
 atoms = Atoms(mol,
-              cell = [(18, 0.0, 0.),(0, 19.0, 0.),(0.0, 0.0, 20.0)],
+              cell = [(40, 0.0, 0.),(0, 40.0, 0.),(0.0, 0.0, 40.0)],
               pbc = True)
 
 ## Another way

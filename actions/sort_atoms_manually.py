@@ -3,7 +3,7 @@
 Usage Command: python3 sort_atoms_manually.py file_read  ele1 ele2  ele3  2.0 
 file_read: POSCAR or CONTCAR 
 ele1, ele2, ele3: the elements in the POSCAR
-2.0: All atoms in Z directions below 2.0\AA will be fixed. 
+2.0: All atoms in Z directions below 2.0 A will be fixed. 
 '''
 import sys
 import ase
