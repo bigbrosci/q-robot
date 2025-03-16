@@ -1231,7 +1231,7 @@ def run_or_plot_active_learning(models, model_name, EF, X, Y, sites,
 ### GA Applilcations
     
 def find_all_rhombuses(atoms, connections, surface_indices, bond_length_threshold):
-    atoms, connections, cn_of_connected_atoms, exposed_top_sites = get_connection(path, metal='Ru', mult=0.9)
+    # atoms, connections, cn_of_connected_atoms, exposed_top_sites = get_connection(path, metal='Ru', mult=0.9)
     """Find all possible rhombuses based on atom connections"""
     rhombuses = []
     for A_index in surface_indices:
@@ -1265,7 +1265,6 @@ def find_all_rhombuses(atoms, connections, surface_indices, bond_length_threshol
     return rhombuses
 
 
-
 def get_matrix_to_be_predicted(cluster_path, site):
     # Load or generate GA data
     try: 
@@ -1295,6 +1294,7 @@ def predict_Eads_site(cluster_path, species, site, Prop):
     '''Print the adsorption energy at the specific site, 
     the data in the data_path is applied to train the GA model to predict the 
     same species at the provided site.
+    Prop values: -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, polarizability, dipole, all are strings.
     '''
     GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
     preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
@@ -1304,28 +1304,236 @@ def predict_Eads_site(cluster_path, species, site, Prop):
     return E_species
 
 
-def get_energy_one_site(rhomnus_site):
-    "Predict the species energies at the top, bri, and hollow sites"    
-
-    site1 = rhomnus_site[:3]
-    site2 = rhomnus_site[1:]  
-    top1,top2,top3 = site1[:]
-    bri1 = '_'.join(str(i) for i in sorted([top1, top2]))
-    bri2 = '_'.join(str(i) for i in sorted([top1, top3]))
-    bri3 = '_'.join(str(i) for i in sorted([top2, top3]))
-    hollow_N = '_'.join([str(i) for i in sorted(site1)])
-    hollow_H = '_'.join([str(i) for i in sorted(site2)])
+# ------------------ Site Conversion ------------------
+def convert_sites(sites_list):
+    """
+    Given a list of four site numbers corresponding to atoms A, B, C, and D (in clockwise order),
+    return a dictionary mapping standard site labels to their numeric string representations.
     
+    For example, if sites_list = [20, 23, 24, 42]:
+      - "top_A": "20"
+      - "top_B": "23"
+      - "top_C": "24"
+      - "top_D": "42"
+      - "bridge_A-B": "20-23"
+      - "bridge_B-C": "23-24"
+      - "bridge_C-D": "24-42"
+      - "bridge_D-A": "20-42"  (always smaller-first)
+      - "hollow_ABD": "20-23-42"  (sorted ascending among A, B, D)
+      - "hollow_BCD": "23-24-42"  (sorted ascending among B, C, D)
+    """
+    if len(sites_list) != 4:
+        raise ValueError("sites_list must contain exactly four elements corresponding to A, B, C, and D.")
+    A, B, C, D = sites_list
+    site_dict = {}
+    site_dict["top_A"] = str(A)
+    site_dict["top_B"] = str(B)
+    site_dict["top_C"] = str(C)
+    site_dict["top_D"] = str(D)
+    site_dict["bridge_A-B"] = f"{min(A, B)}-{max(A, B)}"
+    site_dict["bridge_B-C"] = f"{min(B, C)}-{max(B, C)}"
+    site_dict["bridge_C-D"] = f"{min(C, D)}-{max(C, D)}"
+    site_dict["bridge_D-A"] = f"{min(D, A)}-{max(D, A)}"
+    site_dict["hollow_ABD"] = "-".join(str(x) for x in sorted([A, B, D]))
+    site_dict["hollow_BCD"] = "-".join(str(x) for x in sorted([B, C, D]))
+    return site_dict
+
+# ------------------ Modified Helper Function ------------------
+def select_best_site(cluster_path, species, sites, Prop, site_mapping=None):
+    """
+    Evaluate the predicted adsorption energy for a given species at each candidate site.
+    If site_mapping is provided, convert the candidate label to its numeric string.
     
-    E_top = min([predict_Eads_site(NH3_path, i) for i in [top1,top2,top3]])
-    E_bri = min([predict_Eads_site(NH2_path, i) for i in [bri1,bri2,bri3]])
-    E_hollow_NH  = predict_Eads_site(NH_path, hollow_N)
-    E_hollow_N  = predict_Eads_site(N_path, hollow_N)
-    E_hollow_H  = predict_Eads_site(H_path, hollow_H)
+    Args:
+        cluster_path (str): Path to the cluster data.
+        species (str): The adsorbate species (e.g., "NH3", "NH2", "NH", "N", "H", "N2").
+        sites (list): List of candidate site labels (e.g., "top_A", "bridge_A-B", etc.).
+        Prop: Additional properties required by predict_Eads_site.
+        site_mapping (dict, optional): Mapping of candidate labels to numeric strings.
+    
+    Returns:
+        tuple: (best_site, energy_dict) where energy_dict is keyed by the candidate (symbolic label).
+    """
+    energy_dict = {}
+    for site in sites:
+        candidate = site_mapping[site] if (site_mapping is not None and site in site_mapping) else site
+        Eads = predict_Eads_site(cluster_path, species, candidate, Prop)
+        energy_dict[site] = Eads
+        print(f"{species} at site {site} ({candidate}): Eads = {Eads:.3f} eV")
+    best_site = min(energy_dict, key=energy_dict.get)
+    print(f"Best {species} site: {best_site} with Eads = {energy_dict[best_site]:.3f} eV\n")
+    return best_site, energy_dict
 
-  
-    return E_top, E_bri, E_hollow_NH, E_hollow_N, E_hollow_H
+# ------------------ Candidate Mappings ------------------
 
+# (1) For NH3 adsorption:
+nh3_candidates = ["A", "B", "C", "D"]
+
+# (2) For NH3 → NH2 + H:
+def get_nh2_candidates(nh3_site):
+    mapping = {
+        "A": ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
+        "B": ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+        "C": ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
+        "D": ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"]
+    }
+    return mapping.get(nh3_site, [])
+
+# For H in Step 2 (H determined by NH2):
+nh2_to_h_candidates_step2 = {
+    "top_A":     ["top_B", "top_D", "hollow_ABD", "hollow_BCD"],
+    "top_B":     ["top_A", "top_C", "hollow_ABD", "hollow_BCD"],
+    "top_C":     ["top_B", "top_D", "hollow_ABD", "hollow_BCD"],
+    "top_D":     ["top_A", "top_C", "hollow_ABD", "hollow_BCD"],
+    "bridge_A-B": ["top_A", "top_B", "bridge_A-B", "hollow_ABD"],
+    "bridge_B-C": ["top_B", "top_C", "bridge_B-C", "hollow_BCD"],
+    "bridge_C-D": ["top_C", "top_D", "bridge_C-D", "hollow_BCD"],
+    "bridge_D-A": ["top_D", "top_A", "bridge_D-A", "hollow_ABD"],
+    "hollow_ABD": ["hollow_ABD", "top_A", "top_B", "top_D", "bridge_A-B", "bridge_D-A"],
+    "hollow_BCD": ["hollow_BCD", "top_B", "top_C", "top_D", "bridge_B-C", "bridge_C-D"]
+}
+
+# (3) For NH2 → NH + H:
+nh2_to_nh_candidates = {
+    "top_A":     ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
+    "top_B":     ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+    "top_C":     ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
+    "top_D":     ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"],
+    "bridge_A-B": ["top_A", "top_B", "bridge_A-B", "hollow_ABD"],
+    "bridge_B-C": ["top_B", "top_C", "bridge_B-C", "bridge_A-B", "hollow_BCD"],
+    "bridge_C-D": ["top_C", "top_D", "bridge_C-D", "hollow_BCD"],
+    "bridge_D-A": ["top_D", "top_A", "bridge_D-A", "hollow_ABD"],
+    "hollow_ABD": ["hollow_ABD", "top_A", "top_B", "top_D", "bridge_A-B", "bridge_D-A"],
+    "hollow_BCD": ["hollow_BCD", "top_B", "top_C", "top_D", "bridge_B-C", "bridge_C-D"]
+}
+
+# For H in Step 3 (H determined by NH):
+nh_to_h_candidates = {
+    "top_A":     ["top_B", "top_D", "top_C", "hollow_ABD", "hollow_BCD"],
+    "top_B":     ["top_A", "top_C", "top_D", "bridge_A-B", "bridge_B-C", "bridge_A-D", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
+    "top_C":     ["top_B", "top_D", "top_A", "bridge_B-C", "bridge_C-D", "bridge_A-B", "bridge_D-A", "hollow_BCD", "hollow_ABD"],
+    "top_D":     ["top_A", "top_B", "top_C", "bridge_C-D", "bridge_D-A", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+    "bridge_A-B": ["top_C", "top_D", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+    "bridge_B-C": ["top_A", "top_D", "bridge_D-A", "bridge_A-B", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
+    "bridge_C-D": ["top_A", "top_B", "bridge_A-B", "bridge_B-C", "bridge_D-A", "hollow_ABD", "hollow_BCD"],
+    "bridge_D-A": ["top_B", "top_C", "bridge_B-C", "bridge_A-B", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
+    "hollow_ABD": ["hollow_BCD", "top_A", "top_B", "top_C", "top_D"],
+    "hollow_BCD": ["hollow_ABD", "top_A", "top_B", "top_C", "top_D"]
+}
+
+# (4) For NH → N + H:
+nh_to_n_candidates = {
+    "top_A":     ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
+    "top_B":     ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+    "top_C":     ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
+    "top_D":     ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"],
+    "bridge_A-B": ["top_A", "top_B", "bridge_A-B", "hollow_ABD"],
+    "bridge_B-C": ["top_B", "top_C", "bridge_B-C", "bridge_A-B", "hollow_BCD"],
+    "bridge_C-D": ["top_C", "top_D", "bridge_C-D", "hollow_BCD"],
+    "bridge_D-A": ["top_D", "top_A", "bridge_D-A", "hollow_ABD"],
+    "hollow_ABD": ["hollow_ABD", "top_A", "top_B", "top_D", "bridge_A-B", "bridge_D-A"],
+    "hollow_BCD": ["hollow_BCD", "top_B", "top_C", "top_D", "bridge_B-C", "bridge_C-D"]
+}
+# For H in Step 4, reuse nh_to_h_candidates.
+
+# ------------------ Reaction Chain Functions ------------------
+
+# Step 1: NH₃ Adsorption
+def determine_NH3_configuration(cluster_path, Prop, site_mapping=None):
+    best_NH3_site, energies = select_best_site(cluster_path, "NH3", nh3_candidates, Prop, site_mapping)
+    return {"site": best_NH3_site, "energy": energies[best_NH3_site]}
+
+# Step 2: NH₃ → NH₂ + H (H determined by NH2)
+def determine_NH2_configuration(cluster_path, Prop, best_NH3_site, site_mapping=None):
+    nh2_candidates = get_nh2_candidates(best_NH3_site)
+    best_NH2_site, energies_NH2 = select_best_site(cluster_path, "NH2", nh2_candidates, Prop, site_mapping)
+    candidate_H_sites = nh2_to_h_candidates_step2.get(best_NH2_site, [])
+    if candidate_H_sites:
+        best_H_site, energies_H = select_best_site(cluster_path, "H", candidate_H_sites, Prop, site_mapping)
+    else:
+        best_H_site, energies_H = None, {}
+    return {
+        "NH2": {"site": best_NH2_site, "energy": energies_NH2[best_NH2_site]},
+        "H1": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}
+    }
+
+# Step 3: NH₂ → NH + H (H determined by NH)
+def determine_NH_configuration(cluster_path, Prop, best_NH2_site, site_mapping=None):
+    candidate_NH_sites = nh2_to_nh_candidates.get(best_NH2_site, [])
+    best_NH_site, energies_NH = select_best_site(cluster_path, "NH", candidate_NH_sites, Prop, site_mapping)
+    candidate_H_sites = nh_to_h_candidates.get(best_NH_site, [])
+    if candidate_H_sites:
+        best_H_site, energies_H = select_best_site(cluster_path, "H", candidate_H_sites, Prop, site_mapping)
+    else:
+        best_H_site, energies_H = None, {}
+    return {
+        "NH": {"site": best_NH_site, "energy": energies_NH[best_NH_site]},
+        "H2": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}
+    }
+
+# Step 4: NH → N + H (H determined by N)
+def determine_N_configuration(cluster_path, Prop, best_NH_site, site_mapping=None):
+    candidate_N_sites = nh_to_n_candidates.get(best_NH_site, [])
+    if candidate_N_sites:
+        best_N_site, energies_N = select_best_site(cluster_path, "N", candidate_N_sites, Prop, site_mapping)
+    else:
+        best_N_site, energies_N = None, {}
+    candidate_H_sites = nh_to_h_candidates.get(best_N_site, [])
+    if candidate_H_sites:
+        best_H_site, energies_H = select_best_site(cluster_path, "H", candidate_H_sites, Prop, site_mapping)
+    else:
+        best_H_site, energies_H = None, {}
+    return {
+        "N": {"site": best_N_site, "energy": energies_N.get(best_N_site, None)},
+        "H3": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}
+    }
+
+# N₂ Adsorption
+def determine_N2_configuration(cluster_path, Prop, site_mapping=None):
+    candidate_sites = [
+        "top_A", "top_B", "top_C", "top_D",
+        "bridge_A-B", "bridge_B-C", "bridge_C-D", "bridge_D-A",
+        "hollow_ABD", "hollow_BCD"
+    ]
+    best_N2_site, energies_N2 = select_best_site(cluster_path, "N2", candidate_sites, Prop, site_mapping)
+    return {"site": best_N2_site, "energy": energies_N2[best_N2_site]}
+
+
+# ------------------ Top-Level Full Configuration ------------------
+def determine_full_configuration(cluster_path, Prop, sites_list=None):
+    """
+    Determine the full stable configuration for the reaction chain and return a dictionary
+    where each species is mapped to a tuple (site, energy):
+      1. NH3 → NH2 + H      (H determined by NH2)
+      2. NH2 → NH + H       (H determined by NH)
+      3. NH  → N + H        (H determined by N)
+      4. Also determine the N2 adsorption site.
+    
+    If sites_list is provided (a list of four numbers for atoms A, B, C, D in clockwise order),
+    it is converted to a mapping for energy predictions.
+    
+    Returns a dictionary with keys:
+      "NH3", "NH2", "NH", "N", "N2", "H1", "H2", and "H3".
+    """
+    site_mapping = convert_sites(sites_list) if sites_list is not None else None
+
+    config_NH3 = determine_NH3_configuration(cluster_path, Prop, site_mapping)
+    config_NH2 = determine_NH2_configuration(cluster_path, Prop, config_NH3["site"], site_mapping)
+    config_NH = determine_NH_configuration(cluster_path, Prop, config_NH2["NH2"]["site"], site_mapping)
+    config_N = determine_N_configuration(cluster_path, Prop, config_NH["NH"]["site"], site_mapping)
+    config_N2 = determine_N2_configuration(cluster_path, Prop, site_mapping)
+
+    final_config = {
+        "NH3": (config_NH3["site"], config_NH3["energy"]),
+        "NH2": (config_NH2["NH2"]["site"], config_NH2["NH2"]["energy"]),
+        "NH":  (config_NH["NH"]["site"], config_NH["NH"]["energy"]),
+        "N":   (config_N["N"]["site"], config_N["N"]["energy"]),
+        "N2":  (config_N2["site"], config_N2["energy"]),
+        "H1":  (config_NH2["H1"]["site"], config_NH2["H1"]["energy"]),
+        "H2":  (config_NH["H2"]["site"], config_NH["H2"]["energy"]),
+        "H3":  (config_N["H3"]["site"], config_N["H3"]["energy"])
+    }
+    return final_config
 
 
 def check_coplanar(points, threshold=0.1):
@@ -1494,36 +1702,53 @@ def is_exposed_rhombus(atoms, rhombus_indices, height=2.5):
     else:
         return False
 
-def find_rhombus(atoms, top_list, B, C, bond_threshold=2.6):
-    # 计算 BC 的距离
-    BC_distance = atoms.get_distance(B, C)
 
-    # 对 top_list 进行排序
-    top_list_sorted = sorted(top_list)
-
-    # 用于存储结果的列表
-    rhombus_list = []
-
-    for A in top_list_sorted:
-        if A == B or A == C:
-            continue
-
-        # 判断 A 与 B 和 C 是否成键
-        if atoms.get_distance(A, B) <= bond_threshold and atoms.get_distance(A, C) <= bond_threshold:
-            # print('A',A)
-            for D in top_list_sorted:
-                if D == A or D == B or D == C:
-                    continue
-
-                # 判断 D 与 B 和 C 是否成键
-                if atoms.get_distance(D, B) <= bond_threshold and atoms.get_distance(D, C) <= bond_threshold:
-                    # print('D', D)
-                    AD_distance = atoms.get_distance(A, D)
-                    if AD_distance > BC_distance:
-                        rhombus_list = [A, B, C, D]
-                        return rhombus_list  # 
-
-    return rhombus_list
+def find_rhombus(atoms, top_list, bond_threshold=2.6):
+    """
+    Given a list of exactly four atom indices (top_list), determine their ordering as a rhombus.
+    
+    The procedure is:
+      1) Find the two atoms that are farthest apart; assign the one with the smaller index as A and the other as C.
+      2) Of the two remaining atoms, assign the one with the smaller index as B and the other as D.
+      3) Check that the bonds A-B, B-C, C-D, and D-A are all shorter than or equal to the bond_threshold.
+         If any bond exceeds the threshold, the configuration is considered invalid and an empty list is returned.
+    
+    Parameters:
+        atoms: An object with a method get_distance(i, j) to compute the distance between atoms.
+        top_list: A list of exactly four atom indices.
+        bond_threshold: The maximum allowed bond length.
+    
+    Returns:
+        A list [A, B, C, D] representing the ordered atoms if valid, or an empty list if invalid.
+    """
+    if len(top_list) != 4:
+        raise ValueError("top_list must contain exactly 4 atoms.")
+    
+    max_distance = 0.0
+    pair = (None, None)
+    # Find the pair of atoms with the maximum distance.
+    for i in range(4):
+        for j in range(i + 1, 4):
+            d = atoms.get_distance(top_list[i], top_list[j])
+            if d > max_distance:
+                max_distance = d
+                pair = (top_list[i], top_list[j])
+    
+    # Assign A and C: the atom with the smaller index becomes A.
+    A, C = pair if pair[0] < pair[1] else (pair[1], pair[0])
+    
+    # The remaining two atoms become B and D; the one with the smaller index is B.
+    remaining = [atom for atom in top_list if atom not in (A, C)]
+    B, D = remaining if remaining[0] < remaining[1] else (remaining[1], remaining[0])
+    
+    # Check the bonds: A-B, B-C, C-D, and D-A.
+    if (atoms.get_distance(A, B) > bond_threshold or
+        atoms.get_distance(B, C) > bond_threshold or
+        atoms.get_distance(C, D) > bond_threshold or
+        atoms.get_distance(D, A) > bond_threshold):
+        return []  # Invalid rhombus configuration.
+    
+    return [A, B, C, D]
 
 def write_indices_to_file(file_path, indices_list):
     with open(file_path, 'w') as file:
@@ -1605,10 +1830,10 @@ def count_short_metal_nonmetal_bonds(cluster, metal='Ru', max_distance=1.6):
     return count
 
 def find_shortest_bond(atoms, cutoff=2.5):
-    # 读取 POSCAR 文件
+    # read POSCAR
     # atoms = read(path)
     
-    # 提取 N 和 Ru 原子的索引
+    # get the index for N
     n_index = None
     ru_indices = []
     
@@ -1620,7 +1845,8 @@ def find_shortest_bond(atoms, cutoff=2.5):
 
     if n_index is None:
         raise ValueError("No nitrogen (N) atom found in the POSCAR file.")  
-    # 计算 N 和每个 Ru 原子之间的距离，并筛选小于 cutoff 的距离
+
+    #Calculate the distance between N and each Ru atom, and filter out the distances that are less than the cutoff.
     distances = []
 
     for ru_index in ru_indices:
@@ -1628,7 +1854,8 @@ def find_shortest_bond(atoms, cutoff=2.5):
         if distance < cutoff:
             distances.append((ru_index, distance))
 
-    # 按距离排序并找出最短的距离
+    
+    ##"Sort by distance and find the shortest distance."
     if distances:
         distances.sort(key=lambda x: x[1])
         shortest_distance = distances[0]
