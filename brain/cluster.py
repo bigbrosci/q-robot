@@ -64,35 +64,10 @@ from scipy.stats import pearsonr
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 
-
-# def convert_unix_to_windows_path(unix_path):
-#     # Replace forward slashes with backslashes
-#     windows_path = unix_path.replace('/', '\\')
-    
-#     # Check if the path starts with '/mnt/', which indicates a mounted drive in WSL
-#     if windows_path.startswith('\\mnt\\'):
-#         # Extract the drive letter and the rest of the path
-#         drive_letter = windows_path[5]
-#         rest_of_path = windows_path[6:]
-#         # Construct the Windows path
-#         windows_path = f'{drive_letter.upper()}:\\{rest_of_path}'
-    
-#     return windows_path
-
-
-# def convert_linux_path_to_relative(path):
-#     # Only adjust the path on Windows
-#     if platform.system() == 'Windows':
-#         # This regex looks for any folder ending with _ads, followed by a path
-#         match = re.search(r'[^/\\]+_ads([/\\].*)', path)
-#         if match:
-#             # Return the relative path starting with '.' 
-#             # (e.g., './1/POSCAR' from '/.../H_ads/1/POSCAR')
-#             return '.' + match.group(1)
-#     return path
-
-
-
+def round_scientific(number, decimals):
+    # Format the number in scientific notation with the desired number of decimals
+    formatted_number = f"{number:.{decimals}e}"
+    return formatted_number
 
 covalent_radii = np.array([1,
                            0.32, 0.46, 1.20, 0.94, 0.77, 0.75, 0.71, 0.63, 0.64, 0.67,
@@ -106,7 +81,6 @@ covalent_radii = np.array([1,
                            1.30, 1.30, 1.36, 1.31, 1.38, 1.42, 2.01, 1.81, 1.67, 1.58,
                            1.52, 1.53, 1.54, 1.55])
 
-# 设置不同吸附位点的 cnmax 值
 cnmax_values = {
     'top': 12,
     'bridge': 18,
@@ -220,10 +194,14 @@ def calculate_cluster_size(structure, metal='Ru'):
 
 def get_top_sites(path, metal = 'Ru', mult=0.9):
     """Obtain the exposed  """
-    try:
-        atoms_in = read(path + '/CONTCAR')
-    except:
-        atoms_in = read(path + '/POSCAR')
+    geo_file = os.path.join(path,'POSCAR')
+    if not os.path.exists(geo_file):
+        geo_file = os.path.join(path,'CONTCAR')
+        if not os.path.exists(geo_file):
+            sys.exit('No geometry file is found.')
+        
+    atoms_in = read(geo_file)
+    
     filtered_atoms = [atom for atom in atoms_in if atom.symbol  in [metal]]
     atoms = Atoms(filtered_atoms)
     radii = natural_cutoffs(atoms, mult=mult)
@@ -1226,8 +1204,6 @@ def run_or_plot_active_learning(models, model_name, EF, X, Y, sites,
         print("Active learning process completed. Plotting results...")
         plot_active_learning_from_csv(overall_csv_file, EF)
 
-
-
 ### GA Applilcations
     
 def find_all_rhombuses(atoms, connections, surface_indices, bond_length_threshold):
@@ -1536,93 +1512,55 @@ def determine_full_configuration(cluster_path, Prop, sites_list=None):
     return final_config
 
 
-def check_coplanar(points, threshold=0.1):
-    """Check if four points are coplanar, unit is Å"""
-    p1, p2, p3, p4 = points
-    # Vectors
-    v1 = p2 - p1
-    v2 = p3 - p1
-    v3 = p4 - p1
-    # Normal vector
-    normal = np.cross(v1, v2)
-    normal /= np.linalg.norm(normal)
-    # Calculate distance of p4 to the plane
-    distance = np.abs(np.dot(v3, normal))
-    return distance < threshold
-
-def filter_coplanar_rhombuses(rhombuses, atoms, coplanar_threshold=0.5):
-    """Filter coplanar rhombuses"""
-    coplanar_rhombuses = []
-    for indices in rhombuses:
-        points = np.array([atoms[idx].position for idx in indices])
-        if check_coplanar(points, threshold=coplanar_threshold):
-            coplanar_rhombuses.append(indices)
-    return coplanar_rhombuses
-
-def filter_rhombuses_by_dihedral(rhombuses, atoms, dihedral_min, dihedral_max):
-    def calculate_dihedral(p1, p2, p3, p4):
-        """Calculate the dihedral angle of four points"""
-        b1 = p2 - p1
-        b2 = p3 - p2
-        b3 = p4 - p3
-
-        # Normal vectors
-        n1 = np.cross(b1, b2)
-        n1 /= np.linalg.norm(n1)
-        n2 = np.cross(b2, b3)
-        n2 /= np.linalg.norm(n2)
-
-        # Dihedral angle
-        m1 = np.cross(n1, b2 / np.linalg.norm(b2))
-        x = np.dot(n1, n2)
-        y = np.dot(m1, n2)
-        angle = np.arctan2(y, x)
-        return np.degrees(angle)
+def compute_EDFT(final_config, gas_dict):
+    """
+    Compute the DFT simulated energy (EDFT) for each species using the following formulas:
+      - EDFT(NH3) = Eads(NH3) + E(slab) + E(NH3_gas)
+      - EDFT(NH2) = Eads(NH2) + E(slab) + E(NH2_gas)
+      - EDFT(NH)  = Eads(NH)  + E(slab) + E(NH_gas)
+      - For N, H1, H2, and H3, use:
+            EDFT = Eads(H) + E(slab) + 0.5 * E(H2_gas)
+      - EDFT(N2)  = Eads(N2)  + E(slab) + E(N2_gas)
     
-    """Filter rhombuses by dihedral angle"""
-    filtered_rhombuses = []
-    for indices in rhombuses:
-        points = np.array([atoms[idx].position for idx in  indices])
-        dihedral_angle = calculate_dihedral(points[0], points[1], points[2], points[3])
-        if dihedral_angle < 0:
-            dihedral_angle += 180
-        # print(dihedral_angle)            
-        if dihedral_min <= dihedral_angle <= dihedral_max:
-            filtered_rhombuses.append(indices)
-            # print(f"Rhombus {indices} with dihedral angle: {dihedral_angle:.2f} degrees")
-    return filtered_rhombuses
+    The final_config dictionary is expected to have the form:
+      {
+         "NH3": (site, Eads_NH3),
+         "NH2": (site, Eads_NH2),
+         "NH":  (site, Eads_NH),
+         "N":   (site, Eads_N),
+         "N2":  (site, Eads_N2),
+         "H1":  (site, Eads_H1),
+         "H2":  (site, Eads_H2),
+         "H3":  (site, Eads_H3)
+      }
+    
+    The gas_dict contains the reference energies, e.g.:
+      gas_dict["slab"], gas_dict["NH3"], gas_dict["NH2"], gas_dict["NH"], 
+      gas_dict["H2"], gas_dict["N2"], etc.
+    
+    Returns a new dictionary mapping each species to a tuple (site, EDFT).
+    """
+    edft = {}
+    edft["NH3"] = (final_config["NH3"][0],
+                   final_config["NH3"][1] + gas_dict["slab"] + gas_dict["NH3"])
+    edft["NH2"] = (final_config["NH2"][0],
+                   final_config["NH2"][1] + gas_dict["slab"] + gas_dict["NH2"])
+    edft["NH"]  = (final_config["NH"][0],
+                   final_config["NH"][1] + gas_dict["slab"] + gas_dict["NH"])
+    # For N, H1, H2, and H3, use the same correction: Eads(H) + slab + 0.5 * H2_gas.
+    edft["N"]   = (final_config["N"][0],
+                   final_config["N"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
+    edft["H1"]  = (final_config["H1"][0],
+                   final_config["H1"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
+    edft["H2"]  = (final_config["H2"][0],
+                   final_config["H2"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
+    edft["H3"]  = (final_config["H3"][0],
+                   final_config["H3"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
+    edft["N2"]  = (final_config["N2"][0],
+                   final_config["N2"][1] + gas_dict["slab"] + gas_dict["N2"])
+    return edft
 
-def filter_sites(all_rhombuses, atoms):
-    neat_sites = []
-    for indices in all_rhombuses:
-        if len(indices) != 4:
-            raise ValueError("List must contain exactly 4 elements")
-        
-        # Get positions using indices
-        positions = atoms.get_positions()
-        
-        max_distance = 0
-        max_pair = (None, None)
-        for i in range(len(indices)):
-            for j in range(i + 1, len(indices)):
-                distance = np.linalg.norm(positions[indices[i]] - positions[indices[j]])
-                if distance > max_distance:
-                    max_distance = distance
-                    max_pair = (indices[i], indices[j])
-                    
-        # Find the pair with the longest distance
-        first, fourth = max_pair
-        
-        # Get the remaining two indices
-        remaining = [index for index in indices if index not in [first, fourth]]
-        second, third = sorted(remaining)
-        
-        # Combine the sorted parts
-        sorted_indices = [min(first, fourth), second, third, max(first, fourth)]        
-        
-        if sorted_indices not in neat_sites:
-            neat_sites.append(sorted_indices)
-    return neat_sites    
+
 
 def point_in_prism(point, base_vertices, top_vertices):
     """Check if a point is within the prism defined by base and top triangles"""
@@ -1675,24 +1613,17 @@ def count_atoms_in_prism(atoms, indices, height):
     
     return atom_count_top, atom_count_bottom
 
-def is_exposed_triangle(atoms, indices, height):
-    """Check if a triangle formed by three indices is exposed by analyzing prisms"""
-    atom_count_top, atom_count_bottom = count_atoms_in_prism(atoms, indices, height)
-    return atom_count_top, atom_count_bottom
 
 def is_exposed_rhombus(atoms, rhombus_indices, height=2.5):
     """Check if a rhombus formed by four indices is exposed"""
     triangles = [
-        [rhombus_indices[0], rhombus_indices[1], rhombus_indices[2]],
-        # [rhombus_indices[0], rhombus_indices[2], rhombus_indices[3]],
-        # [rhombus_indices[0], rhombus_indices[1], rhombus_indices[3]],
+        [rhombus_indices[0], rhombus_indices[1], rhombus_indices[3]],
         [rhombus_indices[1], rhombus_indices[2], rhombus_indices[3]]
     ]
     
     false_or_true = []
     for triangle in triangles:
-        atom_count_top, atom_count_bottom = is_exposed_triangle(atoms, triangle, height)
-        # print(f"Triangle {triangle} has {atom_count_top} atoms in the top prism and {atom_count_bottom} atoms in the bottom prism.")
+        atom_count_top, atom_count_bottom = count_atoms_in_prism(atoms, triangle, height)
         if atom_count_top > 0 and atom_count_bottom > 0:
             false_or_true.append(False)
         else:
@@ -1702,53 +1633,46 @@ def is_exposed_rhombus(atoms, rhombus_indices, height=2.5):
     else:
         return False
 
-
-def find_rhombus(atoms, top_list, bond_threshold=2.6):
+def find_rhombus(atoms, top_list, B, D, bond_threshold=2.6):
     """
-    Given a list of exactly four atom indices (top_list), determine their ordering as a rhombus.
-    
-    The procedure is:
-      1) Find the two atoms that are farthest apart; assign the one with the smaller index as A and the other as C.
-      2) Of the two remaining atoms, assign the one with the smaller index as B and the other as D.
-      3) Check that the bonds A-B, B-C, C-D, and D-A are all shorter than or equal to the bond_threshold.
-         If any bond exceeds the threshold, the configuration is considered invalid and an empty list is returned.
+    Given a list of four atom indices (top_list) that form a quadrilateral in clockwise order,
+    this function identifies a valid rhombus if:
+      1) The pair of atoms with the longest distance is assigned as A and C (with the smaller index as A).
+      2) The remaining two atoms are B and D (with the smaller index as B).
+      3) The bonds A–B, B–C, C–D, and D–A all have distances less than or equal to bond_threshold.
+         (In this design, B and D are assumed to be bonded, representing the shorter bridge.)
     
     Parameters:
-        atoms: An object with a method get_distance(i, j) to compute the distance between atoms.
-        top_list: A list of exactly four atom indices.
-        bond_threshold: The maximum allowed bond length.
+      atoms: An object that supports atoms.get_distance(i, j) for distance between atoms.
+      top_list: List of four atom indices.
+      B, D: The two atoms chosen (from top_list) that form the short bridge (B–D).
+      bond_threshold: Maximum allowed distance for a bond.
     
     Returns:
-        A list [A, B, C, D] representing the ordered atoms if valid, or an empty list if invalid.
+      A list [A, B, C, D] representing the valid rhombus in clockwise order,
+      or an empty list if no valid rhombus is found.
     """
-    if len(top_list) != 4:
-        raise ValueError("top_list must contain exactly 4 atoms.")
-    
-    max_distance = 0.0
-    pair = (None, None)
-    # Find the pair of atoms with the maximum distance.
-    for i in range(4):
-        for j in range(i + 1, 4):
-            d = atoms.get_distance(top_list[i], top_list[j])
-            if d > max_distance:
-                max_distance = d
-                pair = (top_list[i], top_list[j])
-    
-    # Assign A and C: the atom with the smaller index becomes A.
-    A, C = pair if pair[0] < pair[1] else (pair[1], pair[0])
-    
-    # The remaining two atoms become B and D; the one with the smaller index is B.
-    remaining = [atom for atom in top_list if atom not in (A, C)]
-    B, D = remaining if remaining[0] < remaining[1] else (remaining[1], remaining[0])
-    
-    # Check the bonds: A-B, B-C, C-D, and D-A.
-    if (atoms.get_distance(A, B) > bond_threshold or
-        atoms.get_distance(B, C) > bond_threshold or
-        atoms.get_distance(C, D) > bond_threshold or
-        atoms.get_distance(D, A) > bond_threshold):
-        return []  # Invalid rhombus configuration.
-    
-    return [A, B, C, D]
+    # Compute the distance between B and D (the short bridge)
+    BD_distance = atoms.get_distance(B, D)
+    top_list_sorted = sorted(top_list)
+
+    for A in top_list_sorted:
+        if A == B or A == D:
+            continue
+
+        # Check whether A forms bonds with both B and D
+        if atoms.get_distance(A, B) <= bond_threshold and atoms.get_distance(A, D) <= bond_threshold:
+            for C in top_list_sorted:
+                if C in (A, B, D):
+                    continue
+
+                # Check whether C forms bonds with both B and D
+                if atoms.get_distance(C, B) <= bond_threshold and atoms.get_distance(C, D) <= bond_threshold:
+                    AC_distance = atoms.get_distance(A, C)
+                    # The longest distance should be between A and C.
+                    if AC_distance > BD_distance:
+                        return [A, B, C, D]
+    return []
 
 def write_indices_to_file(file_path, indices_list):
     with open(file_path, 'w') as file:
@@ -2000,43 +1924,37 @@ def add_more_bri(path):
     for site in folders:     
         add_more_atoms(site)
         
-def get_active_sites(path):   # Path: the cluster model directory
-    atoms = read(path + '/POSCAR')
-    mult = 0.9 
+def get_active_sites(cluster_path):   # Path: the cluster model directory
+    poscar = os.path.join(cluster_path, 'POSCAR')
+    atoms = read(poscar)
     bond_length_threshold = 2.7
     metal = 'Ru'
 
-    ############## Step1: obtain the bridge sites
-    list_file = list_file = os.path.join(path, 'list')   ### list all the top sites in one line
+    """ Step1: obtain the top sites""" 
+    list_file = os.path.join(cluster_path, 'list')   ### list all the top sites in one line
     if not os.path.exists(list_file):
         # print("Warning: No list file found. Examine the exposed sites using Coordination Numbers.")
-        surface_indices = get_top_sites(path, metal, mult=0.9)  ## Seems that this method is not ideal
+        surface_indices = get_top_sites(cluster_path, metal, mult=0.9)  ## Seems that this method is not ideal
     else:
         with open(list_file, 'r') as f_in:
             top_indices = f_in.readline().rstrip().split()
             top_indices = [int(i) for i in top_indices]
             surface_indices = [i-1 for i in top_indices]
  
-    add_one_bri(path,surface_indices)
-    ############## Step2: obtain the rhombus sites
-    bri_path = os.path.abspath('./bri')
-    all_bri_folders = os.listdir(bri_path)
-    bri_sites = [item for item in all_bri_folders if os.path.isdir(os.path.join(bri_path, item))]
+    """ Step2: obtain the bridge sites """     
+    bridge_list = []
+    for combination in itertools.combinations(top_indices, 2):
+        sorted_combination = sorted(combination)
+        distance = atoms.get_distance(sorted_combination[0], sorted_combination[1])
+        if distance < 2.6:
+            bridge_list.append(sorted_combination)
 
     l_rhombus  = []
-    for sites in bri_sites: 
-        l_sites = sites.split('_')  
-        # Bridge site configuration folder example: 43_44, 43 and 44 are the index of atoms in the POSCAR, counting from 0
-        B, C  = [int(i) for i in l_sites]
-        indices = find_rhombus(atoms, surface_indices, B, C, bond_threshold=3.0)
+    for bridge_site in bridge_list: 
+        B, D  =  bridge_site[:]
+        indices = find_rhombus(atoms, surface_indices, B, D, bond_threshold=3.0)
         l_rhombus.append(indices)
        
-    #Check the rhombus sites cannot be formed from some bridge sites 
-    for num, site in enumerate(all_bri_folders):
-        if len(l_rhombus[num]) == 0:
-            sites = [int(i) for i in site.split('_') ]
-            # print('No active site is found for: ', site)        
-            
     l_rhombus = [item for item in l_rhombus if item] ## remove the empty 
 
     ############## Step3: categorize  rhombus sites: planar or edge
@@ -2044,12 +1962,11 @@ def get_active_sites(path):   # Path: the cluster model directory
     coplanar_rhombus = filter_coplanar_rhombuses(l_rhombus, atoms, coplanar_threshold)
     edge_rhombus = filter_rhombuses_by_dihedral(l_rhombus, atoms, 40, 120)
 
-    write_indices_to_file(os.path.join(path, 'all_sites.txt'), l_rhombus)
-    write_indices_to_file(os.path.join(path, 'planar_sites.txt'), coplanar_rhombus)
-    write_indices_to_file(os.path.join(path, 'edge_sites.txt'), edge_rhombus)
+    write_indices_to_file(os.path.join(cluster_path, 'all_sites.txt'), l_rhombus)
+    write_indices_to_file(os.path.join(cluster_path, 'planar_sites.txt'), coplanar_rhombus)
+    write_indices_to_file(os.path.join(cluster_path, 'edge_sites.txt'), edge_rhombus)
 
     return l_rhombus, coplanar_rhombus, edge_rhombus
-
 
 ################## Section MKM
 

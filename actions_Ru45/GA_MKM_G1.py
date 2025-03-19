@@ -15,42 +15,6 @@ cluster_path = convert_unix_to_windows_path(cluster_path)
 
 l_rhombus, coplanar_rhombus, edge_rhombus = get_active_sites(cluster_path)
 
-def get_energy_one_site(rhomnus_site):
-    "Predict the species energies at the top, bri, and hollow sites"    
-
-    site1 = rhomnus_site[:3]
-    site2 = rhomnus_site[1:]  
-    top1,top2,top3 = site1[:]
-    bri1 = '_'.join(str(i) for i in sorted([top1, top2]))
-    bri2 = '_'.join(str(i) for i in sorted([top1, top3]))
-    bri3 = '_'.join(str(i) for i in sorted([top2, top3]))
-    hollow_N = '_'.join([str(i) for i in sorted(site1)])
-    hollow_H = '_'.join([str(i) for i in sorted(site2)])
-    
-    E_top = min([predict_Eads_site(NH3_path, i) for i in [top1,top2,top3]])
-    E_bri = min([predict_Eads_site(NH2_path, i) for i in [bri1,bri2,bri3]])
-    E_hollow_NH  = predict_Eads_site(NH_path, hollow_N)
-    E_hollow_N  = predict_Eads_site(N_path, hollow_N)
-    E_hollow_H  = predict_Eads_site(H_path, hollow_H)
-
-    return E_top, E_bri, E_hollow_NH, E_hollow_N, E_hollow_H
-
-l_rhombus, coplanar_rhombus, edge_rhombus = get_active_sites(cluster_path)
-
-
-def round_scientific(number, decimals):
-    # Format the number in scientific notation with the desired number of decimals
-    formatted_number = f"{number:.{decimals}e}"
-    return formatted_number
-
-NH3_path = '/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_dft/NH3_ads'
-NH2_path = '/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_dft/NH2_ads'
-NH_path = '/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_dft/NH_ads'
-N_path = '/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_dft/N_ads'
-H_path = '/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_dft/H_ads'                                    
-
-E_H2 = -6.76668776
-
 for rhomnus_site  in l_rhombus[:1]:
     try: 
         print("Site:", rhomnus_site)
