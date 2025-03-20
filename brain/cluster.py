@@ -357,107 +357,6 @@ def get_CN_GA(path, mult=0.9):
         for group in groups:
             f.write(f"{group}\n")
 
-# Define bonding criteria (in Angstrom)
-R_N_BOND_MAX = 2.4  # Max Ru-N bond distance
-R_H_BOND_MAX = 2.2  # Max Ru-H bond distance
-N_N_BOND_MAX = 1.3  # Max N-N bond distance for N2 detection
-
-def get_bonded_atoms(atoms, atom_index, element, cutoff):
-    """Find all atoms of a given element bonded to a specified atom."""
-    bonded = []
-    for i, atom in enumerate(atoms):
-        if atom.symbol == element and i != atom_index:
-            dist = atoms.get_distance(atom_index, i)
-            if dist < cutoff:
-                bonded.append(i)
-    return bonded
-
-def format_ru_sites(ru_indices):
-    """Convert a list of Ru indices into a sorted string format."""
-    ru_indices = [i + 1 for i in ru_indices]  # Convert to 1-based index
-    ru_indices.sort()  # Sort in ascending order
-    return "_".join(map(str, ru_indices)) if ru_indices else "N/A"
-
-def classify_n2_adsorption(atoms):
-    """Classify N2 adsorption sites based on Ru coordination."""
-    nitrogen_indices = [i for i, atom in enumerate(atoms) if atom.symbol == "N"]
-    n2_molecules = []
-    visited = set()
-
-    # Identify N2 pairs based on N-N bond distance
-    for i in nitrogen_indices:
-        if i in visited:
-            continue
-        for j in nitrogen_indices:
-            if i != j and atoms.get_distance(i, j) < N_N_BOND_MAX:
-                n2_molecules.append((i, j))
-                visited.add(i)
-                visited.add(j)
-                break
-
-    results = []
-    for n1, n2 in n2_molecules:
-        ru_bonded_n1 = get_bonded_atoms(atoms, n1, "Ru", R_N_BOND_MAX)
-        ru_bonded_n2 = get_bonded_atoms(atoms, n2, "Ru", R_N_BOND_MAX)
-        bond_counts = tuple(sorted([len(ru_bonded_n1), len(ru_bonded_n2)]))
-
-        # Classify adsorption type
-        if bond_counts == (0, 1):
-            adsorption_type = "top1"
-            # Identify which N is bonded to Ru
-            if len(ru_bonded_n1) == 1:  # If N1 is bonded to Ru, use its Ru index
-                ru_site_str = format_ru_sites(ru_bonded_n1)
-            else:  # Otherwise, N2 must be bonded, so use its Ru index
-                ru_site_str = format_ru_sites(ru_bonded_n2)
-        elif bond_counts == (1, 1) and ru_bonded_n1 == ru_bonded_n2:
-            adsorption_type = "top2"
-            ru_site_str = format_ru_sites(ru_bonded_n1)
-        elif bond_counts == (1, 1):
-            adsorption_type = "bridge-1"
-            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
-        elif bond_counts == (1, 2):
-            adsorption_type = "bridge-2"
-            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
-        elif bond_counts == (2, 2) and len(set(ru_bonded_n1 + ru_bonded_n2)) == 3:
-            adsorption_type = "fcc-1"
-            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
-        elif bond_counts == (2, 3):
-            adsorption_type = "fcc-2"
-            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
-        elif bond_counts == (1, 3):
-            adsorption_type = "fcc-3"
-            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
-        else:
-            adsorption_type = "unknown"
-            ru_site_str = "N/A"
-
-        results.append((n1, n2, adsorption_type, ru_site_str))
-    # return results
-    return ru_site_str
-
-def classify_single_atom_adsorption(atoms, element, bond_cutoff):
-    """Classify adsorption of single atoms (N or H) based on Ru coordination."""
-    atom_indices = [i for i, atom in enumerate(atoms) if atom.symbol == element]
-    results = []
-
-    for idx in atom_indices:
-        ru_bonded = get_bonded_atoms(atoms, idx, "Ru", bond_cutoff)
-
-        # Determine adsorption type
-        if len(ru_bonded) == 1:
-            adsorption_type = "top"
-        elif len(ru_bonded) == 2:
-            adsorption_type = "bridge"
-        elif len(ru_bonded) == 3:
-            adsorption_type = "hollow"
-        else:
-            adsorption_type = "unknown"
-
-        ru_site_str = format_ru_sites(ru_bonded)
-        results.append((idx, adsorption_type, ru_site_str))
-
-    # return results
-    return ru_site_str
 
 def load_ga_data(cluster_path):
     """
@@ -650,7 +549,7 @@ def generate_GA_matrix(cluster_path, list_EF=[str(x) for x in [-0.6, -0.4, -0.2,
         try:
             # Determine the adsorption site type based on the file path
             if 'N2_ads' in full_path:
-                ru_site_str = classify_n2_adsorption(atoms)
+                ru_site_str = classify_N2_adsorption(atoms)
                 print(path, ru_site_str)
             elif any(keyword in full_path for keyword in ['N_ads', 'NH_ads', 'NH2_ads', 'NH3_ads']):    
                 ru_site_str = classify_single_atom_adsorption(atoms, 'N', 2.4)
@@ -2289,6 +2188,256 @@ def get_rate(kf0, kr0):
 #### Construct adsorption configurations 
 
 
+# Define bonding criteria (in Angstrom)
+R_N_BOND_MAX = 2.4  # Max Ru-N bond distance
+R_H_BOND_MAX = 2.2  # Max Ru-H bond distance
+N_N_BOND_MAX = 1.4  # Max N-N bond distance for N2 detection
+
+def get_bonded_atoms(atoms, atom_index, element, cutoff):
+    """Find all atoms of a given element bonded to a specified atom."""
+    bonded = []
+    for i, atom in enumerate(atoms):
+        if atom.symbol == element and i != atom_index:
+            dist = atoms.get_distance(atom_index, i)
+            if dist < cutoff:
+                bonded.append(i)
+    return bonded
+
+
+
+def classify_single_atom_adsorption(atoms, element, bond_cutoff):
+    """Classify adsorption of single atoms (N or H) based on Ru coordination."""
+    atom_indices = [i for i, atom in enumerate(atoms) if atom.symbol == element]
+    results = []
+
+    for idx in atom_indices:
+        ru_bonded = get_bonded_atoms(atoms, idx, "Ru", bond_cutoff)
+
+        # Determine adsorption type
+        if len(ru_bonded) == 1:
+            adsorption_type = "top"
+        elif len(ru_bonded) == 2:
+            adsorption_type = "bridge"
+        elif len(ru_bonded) == 3:
+            adsorption_type = "hollow"
+        else:
+            adsorption_type = "unknown"
+
+        ru_site_str = format_ru_sites(ru_bonded)
+        results.append((idx, adsorption_type, ru_site_str))
+
+    # return results
+    return ru_site_str
+
+
+def format_ru_sites(ru_indices):
+    """Convert a list of Ru indices into a sorted string format."""
+    ru_indices = [i + 1 for i in ru_indices]  # Convert to 1-based index
+    ru_indices.sort()  # Sort in ascending order
+    return "_".join(map(str, ru_indices)) if ru_indices else "N/A"
+
+def is_valid_bridge3(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
+    """
+    Check if N2 forms a Bridge-3 adsorption:
+    - Both N atoms bind to the same two Ru atoms.
+    - N2 bond is at an angle between 75°-90° relative to Ru-Ru bond.
+
+    Returns:
+        True  -> Valid Bridge-3
+        False -> Not a Bridge-3
+    """
+    if set(ru_bonded_n1) != set(ru_bonded_n2):
+        return False  # Ensure both N atoms are bonded to the same two Ru atoms
+
+    ru1, ru2 = ru_bonded_n1  # Get the two Ru atoms
+
+    # Get atomic positions
+    n1_pos = atoms[n1].position
+    n2_pos = atoms[n2].position
+    ru1_pos = atoms[ru1].position
+    ru2_pos = atoms[ru2].position
+
+    # Compute N2 and Ru-Ru vectors
+    n2_vector = n2_pos - n1_pos
+    n2_vector /= np.linalg.norm(n2_vector)
+
+    ru_vector = ru2_pos - ru1_pos
+    ru_vector /= np.linalg.norm(ru_vector)
+
+    # Compute angle in degrees
+    angle_rad = np.arccos(np.dot(n2_vector, ru_vector))
+    angle_deg = np.degrees(angle_rad)
+
+    return 75 <= angle_deg <= 90  # Allow angle range between 75°-90°
+
+
+
+# def is_valid_fcc0(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
+#     """
+#     Check if N2 forms an FCC-0 adsorption:
+#     - N1 binds to two Ru atoms (A, B).
+#     - N2 binds to a third, separate Ru atom (C), instead of one of (A, B).
+
+#     Returns:
+#         True  -> Valid FCC-0
+#         False -> Not an FCC-0 site (likely Bridge-2)
+#     """
+#     if len(ru_bonded_n1) != 2 or len(ru_bonded_n2) != 2:
+#         return False  # Ensure N1 and N2 each bind to exactly two Ru atoms
+
+#     # Get the two Ru atoms bound to N1 (A, B)
+#     ru_n1_set = set(ru_bonded_n1)
+
+#     # Get the two Ru atoms bound to N2 (should include C)
+#     ru_n2_set = set(ru_bonded_n2)
+
+#     # **For Bridge-2: N2 must bind to both A and B**
+#     if ru_n2_set.issubset(ru_n1_set):
+#         return False
+
+#     # **For FCC-0: N2 must bind to a third Ru (C) instead of both A and B**
+#     return True
+
+def is_valid_fcc0(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
+    """
+    Check if N2 forms an FCC-0 adsorption:
+    - One N (N1 or N2) binds to two Ru atoms (A, B).
+    - The other N (N2 or N1) binds to a third, separate Ru atom (C), instead of both A and B.
+
+    Returns:
+        True  -> Valid FCC-0
+        False -> Not an FCC-0 site (likely Bridge-2)
+    """
+    if len(ru_bonded_n1) != 2 or len(ru_bonded_n2) != 1:
+        if len(ru_bonded_n1) != 1 or len(ru_bonded_n2) != 2:
+            return False  # Ensure N1 binds to two Ru, and N2 binds to one OR vice versa
+
+    # Get the two Ru atoms bound to N1 (A, B) and the single Ru bound to N2 (C)
+    ru_n1_set = set(ru_bonded_n1)
+    ru_n2_set = set(ru_bonded_n2)
+
+    # **For FCC-0: N2 must bind to a separate Ru (C) not in (A, B)**
+    return len(ru_n1_set.intersection(ru_n2_set)) == 0
+
+def is_valid_rhombus_site(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
+    """
+    Check if N2 forms a Rhombus adsorption:
+    - N1 binds to three Ru atoms (A, B, C).
+    - N2 binds to one of (A, B, C) and a new Ru atom (D).
+    - Distinguishes from FCC-2 where N2 binds to two of (A, B, C).
+
+    Returns:
+        True  -> Valid Rhombus site
+        False -> Not a Rhombus site (likely FCC-2)
+    """
+    if len(ru_bonded_n1) != 3 or len(ru_bonded_n2) != 2:
+        return False  # Ensure correct Ru coordination
+
+    # Get the three Ru atoms bound to N1 (A, B, C)
+    ru_n1_set = set(ru_bonded_n1)
+
+    # Get the two Ru atoms bound to N2
+    ru_n2_set = set(ru_bonded_n2)
+
+    # **Check if N2 binds to only one of (A, B, C) and one new Ru (D)**
+    common_rus = ru_n1_set.intersection(ru_n2_set)
+    unique_rus = ru_n2_set.difference(ru_n1_set)
+
+    return len(common_rus) == 1 and len(unique_rus) == 1
+
+
+
+def classify_N2_adsorption(atoms):
+    """Classify N2 adsorption types and format Ru sites as strings."""
+    nitrogen_indices = [i for i, atom in enumerate(atoms) if atom.symbol == "N"]
+    # print('N2', nitrogen_indices)
+    # Pair N atoms into N2 molecules based on N-N bonding distance
+    n2_molecules = []
+    visited = set()
+    for i in nitrogen_indices:
+        if i in visited:
+            continue
+        for j in nitrogen_indices:
+            if i != j and atoms.get_distance(i, j) < N_N_BOND_MAX:
+                n2_molecules.append((i, j))
+                visited.add(i)
+                visited.add(j)
+                break
+
+    results = []
+    
+    for n1, n2 in n2_molecules:
+        
+        ru_bonded_n1 = get_bonded_atoms(atoms, n1, "Ru", R_N_BOND_MAX)
+        ru_bonded_n2 = get_bonded_atoms(atoms, n2, "Ru", R_N_BOND_MAX)
+        
+        # **Normalize Bond Counts** (Handle N1/N2 ordering issue)
+        bond_counts = tuple(sorted([len(ru_bonded_n1), len(ru_bonded_n2)]))
+        
+        
+        # **Check for Gas-Phase N2**
+        if atoms.get_distance(n1, n2) < 1.3 and len(ru_bonded_n1) == 0 and len(ru_bonded_n2) == 0:
+            adsorption_type = "gas"
+            ru_site_str = "N/A"
+        
+        # **Classify Adsorption Type**
+        elif bond_counts == (0, 1):
+            adsorption_type = "top1"
+            ru_site_str = format_ru_sites(ru_bonded_n1 if len(ru_bonded_n1) == 1 else ru_bonded_n2)
+        elif bond_counts == (1, 1) and ru_bonded_n1 == ru_bonded_n2:
+            adsorption_type = "top2"
+            ru_site_str = format_ru_sites(ru_bonded_n1)  # One Ru index
+        elif bond_counts == (1, 1):
+            adsorption_type = "bridge-1"
+            ru_site_str = format_ru_sites(list(set(ru_bonded_n1 + ru_bonded_n2)))  # Two Ru atoms
+        
+        elif bond_counts == (0, 2):
+            # **Bridge-0: One N binds to two Ru atoms, the other is in the gas phase**
+            adsorption_type = "bridge-0"
+            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
+    
+        elif bond_counts == (1, 2):
+            # **Distinguish between FCC-0 and Bridge-2**
+            if is_valid_fcc0(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
+                adsorption_type = "fcc-0"
+            else:
+                adsorption_type = "bridge-2"
+            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
+        elif bond_counts == (2, 2):
+            # **Bridge-3 detection (Both N bind to the same two Ru atoms & angle between 75°-90°)**
+            if is_valid_bridge3(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
+                adsorption_type = "bridge-3"
+                ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
+            else:
+                if len(set(ru_bonded_n1 + ru_bonded_n2)) == 3:
+                    adsorption_type = "fcc-1"
+                    ru_site_str = format_ru_sites(list(set(ru_bonded_n1 + ru_bonded_n2)))  # Three Ru atoms
+                elif len(set(ru_bonded_n1 + ru_bonded_n2)) == 4:
+                    adsorption_type = "trapezoid-1"
+                    ru_site_str = format_ru_sites(list(set(ru_bonded_n1 + ru_bonded_n2)))  # Three Ru atoms
+                    
+                else:
+                    adsorption_type = "unknown"
+                    ru_site_str = "N/A"
+        elif bond_counts == (2, 3):
+            # **Distinguish between FCC-2 and Rhombus**
+            if is_valid_rhombus_site(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
+                adsorption_type = "rhombus"
+            else:
+                adsorption_type = "fcc-2"
+            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))  # Three Ru atoms
+        elif bond_counts == (1, 3):
+            adsorption_type = "fcc-3"
+            ru_site_str = format_ru_sites(list(set(ru_bonded_n1 + ru_bonded_n2)))  # Three Ru atoms
+        else:
+            adsorption_type = "unknown"
+            ru_site_str = "N/A"
+
+        results.append((n1, n2, adsorption_type, ru_site_str))
+
+    return results   
+
+
 def get_shortest_ru_n_distance(atoms):
     """Get the shortest Ru-N distance in the given structure."""
     ru_indices = [i for i, atom in enumerate(atoms) if atom.symbol == 'Ru']
@@ -2361,7 +2510,7 @@ def add_N2_top_sites(atoms, n_ru_distance=2.0, n_n_distance=1.19):
 
 def add_N2_bridge_sites(atoms, n_ru_distance=2.15, n_n_distance=1.19):
     """
-    Add N2 molecules at bridge adsorption sites (Bridge-1 and Bridge-2).
+    Add N2 molecules at bridge adsorption sites (Bridge-1, Bridge-2, Bridge-3, FCC-0).
     """
 
     connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal='Ru', mult=0.9)
@@ -2373,7 +2522,7 @@ def add_N2_bridge_sites(atoms, n_ru_distance=2.15, n_n_distance=1.19):
         direction = bridge_mid - mass_center
         direction /= np.linalg.norm(direction)
 
-        ### **Bridge-1 Placement**
+        ### **Bridge-1 Placement (Parallel to Ru-Ru)**
         nn_center = bridge_mid + direction * n_ru_distance
         ru_vector = pos2 - pos1
         ru_vector /= np.linalg.norm(ru_vector)
@@ -2401,20 +2550,75 @@ def add_N2_bridge_sites(atoms, n_ru_distance=2.15, n_n_distance=1.19):
         else:
             write(f"POSCAR_bridge1_{i+1}.vasp", new_atoms_bridge1, format='vasp')
 
-        ### **Bridge-2 Placement**
-        shared_ru = ru1 if ru1 in connections[ru2] else ru2
-        other_ru = ru2 if shared_ru == ru1 else ru1
-        nn_center = atoms[shared_ru].position + direction * n_ru_distance
+        ### **Bridge-2 & FCC-0 Placement**
+        possible_c_rus = [ru for ru in connections[ru1] if ru != ru2] + [ru for ru in connections[ru2] if ru != ru1]
 
-        n1_position_bridge2 = nn_center + ru_vector * (n_n_distance / 2)
-        n2_position_bridge2 = nn_center - ru_vector * (n_n_distance / 2)
-        n2_bridge2 = Atoms('N2', positions=[n1_position_bridge2, n2_position_bridge2])
+        if possible_c_rus:  # Ensure a third Ru atom exists
+            ru3 = possible_c_rus[0]  # Select one possible C atom
+            pos3 = atoms[ru3].position
 
-        new_atoms_bridge2 = atoms.copy()
-        new_atoms_bridge2.extend(n2_bridge2)
+            if is_valid_fcc0(atoms, ru1, ru2, [ru1, ru2], [ru3]):  
+                adsorption_type = "fcc-0"
+                filename = f"POSCAR_fcc0_{i+1}.vasp"
+            else:
+                adsorption_type = "bridge-2"
+                filename = f"POSCAR_bridge2_{i+1}.vasp"
 
-        write(f"POSCAR_bridge2_{i+1}.vasp", new_atoms_bridge2, format='vasp')
+            n1_position = (pos1 + pos2) / 2 + direction * n_ru_distance
+            n2_position = pos3 + direction * n_ru_distance  # N2 binds to Ru3 in FCC-0 or Ru1/Ru2 in Bridge-2
 
+            n2_new = Atoms('N2', positions=[n1_position, n2_position])
+
+            new_atoms = atoms.copy()
+            new_atoms.extend(n2_new)
+
+            if get_shortest_ru_n_distance(new_atoms) < 1.5:
+                write(f"{filename.replace('.vasp', '_check1.vasp')}", new_atoms, format='vasp')
+                direction = -direction
+                n1_position = (pos1 + pos2) / 2 + direction * n_ru_distance
+                n2_position = pos3 + direction * n_ru_distance
+                n2_new = Atoms('N2', positions=[n1_position, n2_position])
+
+                new_atoms = atoms.copy()
+                new_atoms.extend(n2_new)
+
+                if get_shortest_ru_n_distance(new_atoms) < 1.5:
+                    write(f"{filename.replace('.vasp', '_check2.vasp')}", new_atoms, format='vasp')
+                else:
+                    write(filename, new_atoms, format='vasp')
+            else:
+                write(filename, new_atoms, format='vasp')
+
+        ### **Bridge-3 Placement (N₂ perpendicular to Ru-Ru, both N have 2 Ru-N bonds)**
+        perp_vector = np.cross(ru_vector, direction)
+        perp_vector /= np.linalg.norm(perp_vector)
+
+        nn_center_bridge3 = bridge_mid + direction * n_ru_distance
+        n1_position_bridge3 = nn_center_bridge3 + perp_vector * (n_n_distance / 2)
+        n2_position_bridge3 = nn_center_bridge3 - perp_vector * (n_n_distance / 2)
+        n2_bridge3 = Atoms('N2', positions=[n1_position_bridge3, n2_position_bridge3])
+
+        new_atoms_bridge3 = atoms.copy()
+        new_atoms_bridge3.extend(n2_bridge3)
+
+        if get_shortest_ru_n_distance(new_atoms_bridge3) < 1.5:
+            write(f"POSCAR_bridge3_{i+1}_check1", new_atoms_bridge3, format='vasp')
+            direction = -direction
+            n1_position_bridge3 = nn_center_bridge3 + perp_vector * (n_n_distance / 2)
+            n2_position_bridge3 = nn_center_bridge3 - perp_vector * (n_n_distance / 2)
+            n2_bridge3 = Atoms('N2', positions=[n1_position_bridge3, n2_position_bridge3])
+            new_atoms_bridge3 = atoms.copy()
+            new_atoms_bridge3.extend(n2_bridge3)
+
+            if get_shortest_ru_n_distance(new_atoms_bridge3) < 1.5:
+                write(f"POSCAR_bridge3_{i+1}_check2", new_atoms_bridge3, format='vasp')
+            else:
+                write(f"POSCAR_bridge3_{i+1}.vasp", new_atoms_bridge3, format='vasp')
+        else:
+            write(f"POSCAR_bridge3_{i+1}.vasp", new_atoms_bridge3, format='vasp')
+
+        print(f"Saved POSCAR_bridge3_{i+1}")
+  
 
 def add_hollow_sites(atoms, n_ru_distance=1.95, n_n_distance=1.19, n1_height=1.5):
     """
