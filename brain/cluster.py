@@ -12,7 +12,9 @@ from ase import Atoms, io
 import platform
 import re
 
-
+import numpy as np
+from ase import Atoms
+from ase.io import read, write
 
 # Set default font properties
 # plt.rc('font', size=18)  # Default text font size
@@ -123,11 +125,9 @@ def is_valid_bri(atoms_positions, max_length=3.0):
         return False
     return True
 
-def calculate_normal(p1, p2, p3):
-    """Calculate the normal vector of the triangle formed by points p1, p2, p3"""
-    v1 = p2 - p1
-    v2 = p3 - p1
-    normal = np.cross(v1, v2)
+def calculate_normal(v1, v2, v3):
+    """Calculate the unit normal vector of a triangle defined by three points"""
+    normal = np.cross(v2 - v1, v3 - v1)
     return normal / np.linalg.norm(normal)
 
 def calculate_cn(structure, metal, cutoff=2.7):
@@ -192,16 +192,8 @@ def calculate_cluster_size(structure, metal='Ru'):
     return max_distance
 
 
-def get_top_sites(path, metal = 'Ru', mult=0.9):
-    """Obtain the exposed  """
-    geo_file = os.path.join(path,'POSCAR')
-    if not os.path.exists(geo_file):
-        geo_file = os.path.join(path,'CONTCAR')
-        if not os.path.exists(geo_file):
-            sys.exit('No geometry file is found.')
-        
-    atoms_in = read(geo_file)
-    
+def get_top_sites(atoms_in, metal = 'Ru', mult=0.9):
+    """Obtain the exposed  top sites"""   
     filtered_atoms = [atom for atom in atoms_in if atom.symbol  in [metal]]
     atoms = Atoms(filtered_atoms)
     radii = natural_cutoffs(atoms, mult=mult)
@@ -212,13 +204,9 @@ def get_top_sites(path, metal = 'Ru', mult=0.9):
     exposed_top_sites = [i for i, cn in enumerate(CN) if cn <= 9]
     return exposed_top_sites
 
-def get_connection(path, metal='Ru', mult=0.9):
-    
-    # if platform.system() == 'Windows':
-    #     print('Windows')
-    #     path = convert_linux_path_to_relative(path)
-    #     print(path)
-    atoms_in = read(path + '/POSCAR')
+def get_connection(atoms_in, metal='Ru', mult=0.9):
+        
+    # atoms_in = read(path + '/POSCAR')
     
     filtered_atoms = [atom for atom in atoms_in if atom.symbol in [metal]]
     atoms = Atoms(filtered_atoms)
@@ -227,6 +215,7 @@ def get_connection(path, metal='Ru', mult=0.9):
     nl.update(atoms)
     CN_matrix = nl.get_connectivity_matrix(sparse=False)
     CN = CN_matrix.sum(axis=0)
+    exposed_top_sites = [i for i, cn in enumerate(CN) if cn <= 9]       # Exposed top sites (CN <= 9)
     
     connections = {}     # Get the connections of all atoms
     for i in range(len(atoms)):
@@ -236,10 +225,29 @@ def get_connection(path, metal='Ru', mult=0.9):
     for i in range(len(atoms)):
         connected_indices = connections[i]
         cn_of_connected_atoms[i] = [CN[j] for j in connected_indices]
+        
+        
+        
+    exposed_connections = {i: [j for j in connections[i] if j in exposed_top_sites] for i in exposed_top_sites}
+    
+    # Bridge sites (pairs of connected exposed top sites)
+    bridge_sites = []
+    for i in exposed_top_sites:
+        for j in exposed_connections[i]:
+            if i < j:  # Ensure each pair is considered only once
+                bridge_sites.append([i, j])
+    
+    # Hollow sites (triplets of closely connected exposed top sites)
+    hollow_sites = []
+    for i in exposed_top_sites:
+        for j in exposed_connections[i]:
+            for k in exposed_connections[j]:
+                if i < j and j < k and i in exposed_connections[k]:  # Ensure each triplet is considered only once and forms a triangle
+                    hollow_sites.append([i, j, k])
+                        
 
-    exposed_top_sites = [i for i, cn in enumerate(CN) if cn <= 9]       # Exposed top sites (CN <= 9)
+    return  connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites
 
-    return atoms, connections, cn_of_connected_atoms, exposed_top_sites
 
 def number_to_letter(num):
     """Conver the CN to letters"""
@@ -256,8 +264,10 @@ def get_CN_GA(path, mult=0.9):
     2) the sites will be stored as a dictionray 
     3) all the groups will be stored too to  fix the order of the  groups in the matrix
     '''    
+    file_in = os.path.join(path,'POSCAR')
+    atoms = read(file_in)
     
-    atoms, connections, cn_of_connected_atoms, exposed_top_sites = get_connection(path, metal='Ru', mult=0.9)
+    connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites  = get_connection(atoms, metal='Ru', mult=0.9)
     
     def get_one_site_string(site):
         """Obtain the text string representation for single site """
@@ -318,24 +328,6 @@ def get_CN_GA(path, mult=0.9):
             groups.append(get_one_site_string(s_atom))
         return groups    
 
-    
-    # Filter connections to only include exposed top sites
-    exposed_connections = {i: [j for j in connections[i] if j in exposed_top_sites] for i in exposed_top_sites}
-    
-    # Bridge sites (pairs of connected exposed top sites)
-    bridge_sites = []
-    for i in exposed_top_sites:
-        for j in exposed_connections[i]:
-            if i < j:  # Ensure each pair is considered only once
-                bridge_sites.append([i, j])
-    
-    # Hollow sites (triplets of closely connected exposed top sites)
-    hollow_sites = []
-    for i in exposed_top_sites:
-        for j in exposed_connections[i]:
-            for k in exposed_connections[j]:
-                if i < j and j < k and i in exposed_connections[k]:  # Ensure each triplet is considered only once and forms a triangle
-                    hollow_sites.append([i, j, k])
 
     GA_dict = {}
     for site in exposed_top_sites:
@@ -432,11 +424,8 @@ def classify_n2_adsorption(atoms):
         elif bond_counts == (2, 3):
             adsorption_type = "fcc-2"
             ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
-        elif bond_counts == (3, 3):
-            adsorption_type = "fcc-3"
-            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
         elif bond_counts == (1, 3):
-            adsorption_type = "fcc-4"
+            adsorption_type = "fcc-3"
             ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
         else:
             adsorption_type = "unknown"
@@ -1560,79 +1549,6 @@ def compute_EDFT(final_config, gas_dict):
                    final_config["N2"][1] + gas_dict["slab"] + gas_dict["N2"])
     return edft
 
-
-
-def point_in_prism(point, base_vertices, top_vertices):
-    """Check if a point is within the prism defined by base and top triangles"""
-    def is_point_in_triangle(p, v1, v2, v3):
-        d1 = np.dot(np.cross(v2 - v1, p - v1), np.cross(v2 - v1, v3 - v1))
-        d2 = np.dot(np.cross(v3 - v2, p - v2), np.cross(v3 - v2, v1 - v2))
-        d3 = np.dot(np.cross(v1 - v3, p - v3), np.cross(v1 - v3, v2 - v3))
-        return d1 >= 0 and d2 >= 0 and d3 >= 0
-    
-    # Check if the point is between the two parallel triangles
-    prism_height = np.linalg.norm(top_vertices[0] - base_vertices[0])
-    normal = calculate_normal(base_vertices[0], base_vertices[1], base_vertices[2])
-    distance_to_base = np.dot(point - base_vertices[0], normal)
-    
-    if abs(distance_to_base) > prism_height:
-        return False
-    
-    # Project the point onto the plane of the base triangle
-    projected_point = point - distance_to_base * normal
-    
-    # Check if the projected point is inside the base triangle
-    return is_point_in_triangle(projected_point, *base_vertices)
-
-def count_atoms_in_prism(atoms, indices, height):
-    """Count the number of atoms within the prism formed by translating the base triangle along the normal vector"""
-    pos = atoms.get_positions()
-    
-    # Get positions of the vertices
-    p1, p2, p3 = pos[indices[0]], pos[indices[1]], pos[indices[2]]
-    
-    # Calculate the normal vector
-    normal = calculate_normal(p1, p2, p3)
-    
-    # Translate base vertices along the normal vector
-    top_vertices = [v + height * normal for v in [p1, p2, p3]]
-    bottom_vertices = [v - height * normal for v in [p1, p2, p3]]
-    
-    # Check other atoms
-    atom_count_top = 0
-    atom_count_bottom = 0
-    for i in range(len(pos)):
-        if i in indices:
-            continue
-        p = pos[i]
-        
-        if point_in_prism(p, [p1, p2, p3], top_vertices):
-            atom_count_top += 1
-        if point_in_prism(p, [p1, p2, p3], bottom_vertices):
-            atom_count_bottom += 1
-    
-    return atom_count_top, atom_count_bottom
-
-
-def is_exposed_rhombus(atoms, rhombus_indices, height=2.5):
-    """Check if a rhombus formed by four indices is exposed"""
-    triangles = [
-        [rhombus_indices[0], rhombus_indices[1], rhombus_indices[3]],
-        [rhombus_indices[1], rhombus_indices[2], rhombus_indices[3]]
-    ]
-    
-    false_or_true = []
-    for triangle in triangles:
-        atom_count_top, atom_count_bottom = count_atoms_in_prism(atoms, triangle, height)
-        if atom_count_top > 0 and atom_count_bottom > 0:
-            false_or_true.append(False)
-        else:
-            false_or_true.append(True)
-    if all(false_or_true) : 
-        return True 
-    else:
-        return False
-
 def find_rhombus(atoms, top_list, B, D, bond_threshold=2.6):
     """
     Given a list of four atom indices (top_list) that form a quadrilateral in clockwise order,
@@ -1673,6 +1589,289 @@ def find_rhombus(atoms, top_list, B, D, bond_threshold=2.6):
                     if AC_distance > BD_distance:
                         return [A, B, C, D]
     return []
+
+
+def dihedral_angle(points):
+    """
+    Calculate the dihedral angle (in degrees) between the plane defined by A, B, D
+    and the plane defined by B, C, D.
+    
+    Parameters:
+        points (array-like): A 4x3 array containing the positions of points A, B, C, and D.
+    
+    Returns:
+        float: The dihedral angle in degrees.
+    """
+    A, B, C, D = points
+    # Compute normals for the two planes
+    n1 = np.cross(B - A, D - A)
+    n1 /= np.linalg.norm(n1)
+    n2 = np.cross(C - B, D - B)
+    n2 /= np.linalg.norm(n2)
+    # Compute the angle between the normals
+    dot_val = np.clip(np.dot(n1, n2), -1.0, 1.0)
+    angle = np.degrees(np.arccos(dot_val))
+    return angle
+
+def filter_rhombus_by_dihedral(rhombuses, atoms, dihedral_threshold=120):
+    """
+    Separate candidate rhombus configurations into planar and non-planar groups
+    based on the dihedral angle between planes ABD and BCD.
+    
+    Parameters:
+        rhombuses (list): List of candidate rhombus configurations (each is a list [A, B, C, D]).
+        atoms: An ASE Atoms object (with .position and get_distance() method).
+        dihedral_threshold (float): Angle (in degrees) above which a configuration is considered planar.
+    
+    Returns:
+        tuple: (planar, non_planar)
+            - planar: list of candidates with dihedral angle >= dihedral_threshold.
+            - non_planar: list of candidates with dihedral angle < dihedral_threshold.
+    """
+    planar = []
+    non_planar = []
+    for indices in rhombuses:
+        points = np.array([atoms[idx].position for idx in indices])
+        angle = dihedral_angle(points)
+        if angle >= dihedral_threshold:
+            planar.append(indices)
+        else:
+            non_planar.append(indices)
+    return planar, non_planar
+
+def filter_rhombus_by_AC_BD(planar, non_planar, atoms, AC_cutoff=3.0):
+    """
+    From the candidate rhombus configurations (planar and non-planar), check if any candidate in the non-planar group
+    has a very short A–C distance (less than AC_cutoff). If so, use the A–C pair (sorted) to find candidates
+    that have this pair as their B–D bond. Those candidates are then removed from both the planar and non-planar lists
+    and collected in an invalid_rhombus list.
+    
+    Parameters:
+        planar (list): List of candidate rhombus configurations classified as planar.
+        non_planar (list): List of candidate configurations classified as non-planar.
+        atoms: An ASE Atoms object.
+        AC_cutoff (float): Distance cutoff (in Å) for the A–C bond.
+    
+    Returns:
+        tuple: (new_planar, new_non_planar, invalid_rhombus)
+            - new_planar: Planar candidates after removal.
+            - new_non_planar: Non-planar candidates after removal.
+            - invalid_rhombus: Candidates removed because their A–C pair (from non-planar with short A–C)
+                                is used as a B–D pair.
+    """
+    invalid_rhombus = []
+    # Combine candidates from both groups
+    all_candidates = planar + non_planar
+
+    # Build a dictionary mapping each candidate's B–D pair (sorted) to candidate(s)
+    bd_dict = {}
+    for candidate in all_candidates:
+        BD = tuple(sorted((candidate[1], candidate[3])))
+        bd_dict.setdefault(BD, []).append(candidate)
+
+    # For each candidate in the non-planar list, check its A–C distance.
+    for candidate in non_planar:
+        AC = tuple(sorted((candidate[0], candidate[2])))
+        AC_distance = atoms.get_distance(candidate[0], candidate[2])
+        if AC_distance < AC_cutoff:
+            if AC in bd_dict:
+                for cand in bd_dict[AC]:
+                    if cand not in invalid_rhombus:
+                        invalid_rhombus.append(cand)
+
+    new_planar = [cand for cand in planar if cand not in invalid_rhombus]
+    new_non_planar = [cand for cand in non_planar if cand not in invalid_rhombus]
+
+    return new_planar, new_non_planar, invalid_rhombus
+
+def point_in_prism(point, base_vertices, normal, height):
+    """
+    Check if a point is inside the prism defined by the base triangle and its top translated version.
+
+    Parameters:
+    - point (ndarray): The position of the atom being checked.
+    - base_vertices (list): The three vertices of the base triangle.
+    - normal (ndarray): The normal vector of the triangle.
+    - height (float): The prism height limit.
+
+    Returns:
+    - bool: True if the point is inside the prism, False otherwise.
+    """
+    def is_point_in_triangle(p, v1, v2, v3):
+        """Check if a point p lies inside a 2D projection of a triangle"""
+        u = v2 - v1
+        v = v3 - v1
+        w = p - v1
+
+        uu = np.dot(u, u)
+        uv = np.dot(u, v)
+        vv = np.dot(v, v)
+        wu = np.dot(w, u)
+        wv = np.dot(w, v)
+
+        denom = uv * uv - uu * vv
+        if abs(denom) < 1e-6:
+            return False  # Degenerate triangle
+
+        s = (uv * wv - vv * wu) / denom
+        t = (uv * wu - uu * wv) / denom
+
+        return (s >= 0) and (t >= 0) and (s + t <= 1)
+
+    # Project point onto the base plane
+    v0 = base_vertices[0]
+    distance_to_base = np.dot(point - v0, normal)
+
+    # **Check if point is between top and bottom planes**
+    if not (-height <= distance_to_base <= height):
+        return False
+
+    # Project the point onto the base triangle's plane
+    projected_point = point - distance_to_base * normal
+
+    # **Check if projected point is inside the base triangle**
+    return is_point_in_triangle(projected_point, *base_vertices)
+
+def count_atoms_in_prism(atoms, indices, height):
+    """
+    Count the number of atoms within the prism formed by translating the base triangle
+    along its normal vector by a given height.
+    """
+    pos = atoms.get_positions()
+
+    # Get positions of the three triangle vertices
+    p1, p2, p3 = pos[indices[0]], pos[indices[1]], pos[indices[2]]
+
+    # Compute the normal vector
+    normal = calculate_normal(p1, p2, p3)
+
+    # **Translate base vertices to form the top and bottom triangles**
+    top_triangle = [p1 + height * normal, p2 + height * normal, p3 + height * normal]
+    bottom_triangle = [p1 - height * normal, p2 - height * normal, p3 - height * normal]
+
+    # Count atoms in the top and bottom regions
+    atom_count_top = 0
+    atom_count_bottom = 0
+
+    for i in range(len(pos)):
+        if i in indices:  # Skip the three triangle atoms
+            continue
+
+        p = pos[i]
+
+        # **Check if the atom is inside the top prism region**
+        if point_in_prism(p, top_triangle, normal, height):
+            print(f"Top Prism: {p}")
+            atom_count_top += 1
+
+        # **Check if the atom is inside the bottom prism region (now correctly defined)**
+        if point_in_prism(p, bottom_triangle, normal, height):  
+            atom_count_bottom += 1
+            print(f"Bottom Prism: {p}")
+
+    return atom_count_top, atom_count_bottom
+
+def is_exposed_triangle(atoms, triangle_sites, height=2.2):
+    """
+    Check if a triangle site is exposed based on atom count in the prism region.
+
+    Returns:
+        True  -> Triangle is exposed
+        False -> Triangle is not exposed (blocked)
+    """
+    atom_count_top, atom_count_bottom = count_atoms_in_prism(atoms, triangle_sites, height)
+
+    if atom_count_top > 0 and atom_count_bottom > 0:
+        print(atom_count_top, atom_count_bottom)
+        return False 
+    return True 
+
+def is_exposed_rhombus(atoms, rhombus_indices, height=2.5):
+    """
+    Check if a rhombus formed by four atom indices is exposed.
+    
+    The function divides the rhombus (defined by indices [A, B, C, D]) into two triangles:
+      - Triangle 1: [A, B, D]
+      - Triangle 2: [B, C, D]
+    
+    For each triangle, it calls count_atoms_in_prism(atoms, triangle, height) to determine the number
+    of atoms above (top) and below (bottom) the plane of the triangle. If, for both triangles, at least
+    one triangle does NOT have atoms on both sides of its plane, the rhombus is considered exposed.
+    
+    Parameters:
+        atoms: An ASE Atoms object (each atom has a .position attribute).
+        rhombus_indices (list): A list of four atom indices [A, B, C, D] (in clockwise order).
+        height (float): Height threshold (in Å) for the prism check.
+    
+    Returns:
+        bool: True if the rhombus is exposed, False otherwise.
+    """
+    triangles = [
+        [rhombus_indices[0], rhombus_indices[1], rhombus_indices[3]],  # Triangle ABD
+        [rhombus_indices[1], rhombus_indices[2], rhombus_indices[3]]   # Triangle BCD
+    ]
+    
+    results = []
+    for triangle in triangles:
+        atom_count_top, atom_count_bottom = count_atoms_in_prism(atoms, triangle, height)
+        # If both top and bottom have atoms, then the triangle is not exposed.
+        if atom_count_top > 0 and atom_count_bottom > 0:
+            results.append(False)
+        else:
+            results.append(True)
+    return all(results)
+
+
+def filter_exposed_rhombus(candidates, atoms, height=2.5):
+    """
+    Filter candidate rhombus configurations based on their exposure.
+    
+    For each candidate (a list of four atom indices), this function uses is_exposed_rhombus()
+    to determine whether the configuration is exposed.
+    
+    Parameters:
+        candidates (list): List of candidate rhombus configurations (each is a list [A, B, C, D]).
+        atoms: An ASE Atoms object.
+        height (float): Height threshold (in Å) used in is_exposed_rhombus.
+    
+    Returns:
+        tuple: (exposed_candidates, not_exposed_candidates)
+            - exposed_candidates: List of candidates that are exposed.
+            - not_exposed_candidates: List of candidates that are not exposed.
+    """
+    exposed = []
+    not_exposed = []
+    for candidate in candidates:
+        if is_exposed_rhombus(atoms, candidate, height):
+            exposed.append(candidate)
+        else:
+            not_exposed.append(candidate)
+    return exposed, not_exposed
+
+
+def filter_rhombus_by_exposure(planar, non_planar, atoms, height=2.5):
+    """
+    Given planar and non-planar candidate rhombus configurations, further filter them based on exposure.
+    If a candidate is not exposed (i.e. is_exposed_rhombus() returns False), remove it from both groups
+    and add it to the invalid_rhombus list.
+    
+    Parameters:
+        planar (list): List of candidate rhombus configurations classified as planar.
+        non_planar (list): List of candidate configurations classified as non-planar.
+        atoms: An ASE Atoms object.
+        height (float): Height threshold (in Å) for exposure.
+    
+    Returns:
+        tuple: (planar_exposed, non_planar_exposed, invalid_rhombus)
+            - planar_exposed: List of planar candidates that are exposed.
+            - non_planar_exposed: List of non-planar candidates that are exposed.
+            - invalid_rhombus: List of candidates that are not exposed.
+    """
+    exposed_planar, not_exposed_planar = filter_exposed_rhombus(planar, atoms, height)
+    exposed_non_planar, not_exposed_non_planar = filter_exposed_rhombus(non_planar, atoms, height)
+    invalid_rhombus = not_exposed_planar + not_exposed_non_planar
+    return exposed_planar, exposed_non_planar, invalid_rhombus
+
 
 def write_indices_to_file(file_path, indices_list):
     with open(file_path, 'w') as file:
@@ -1934,7 +2133,7 @@ def get_active_sites(cluster_path):   # Path: the cluster model directory
     list_file = os.path.join(cluster_path, 'list')   ### list all the top sites in one line
     if not os.path.exists(list_file):
         # print("Warning: No list file found. Examine the exposed sites using Coordination Numbers.")
-        surface_indices = get_top_sites(cluster_path, metal, mult=0.9)  ## Seems that this method is not ideal
+        surface_indices = get_top_sites(atoms, metal, mult=0.9)  ## Seems that this method is not ideal
     else:
         with open(list_file, 'r') as f_in:
             top_indices = f_in.readline().rstrip().split()
@@ -2084,3 +2283,238 @@ def get_rate(kf0, kr0):
     # print("XNH3:", X_t[-1], )
 
     return rates
+
+
+
+#### Construct adsorption configurations 
+
+
+def get_shortest_ru_n_distance(atoms):
+    """Get the shortest Ru-N distance in the given structure."""
+    ru_indices = [i for i, atom in enumerate(atoms) if atom.symbol == 'Ru']
+    n_indices = [i for i, atom in enumerate(atoms) if atom.symbol == 'N']
+
+    min_distance = float('inf')
+    for ru in ru_indices:
+        for n in n_indices:
+            distance = atoms.get_distance(ru, n)
+            if distance < min_distance:
+                min_distance = distance
+
+    return min_distance
+
+def add_N2_top_sites(atoms, n_ru_distance=2.0, n_n_distance=1.19):
+    """
+    Add N2 molecules at top adsorption sites (Top1 and Top2).
+    """
+
+    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal='Ru', mult=0.9)
+    mass_center = np.mean([atom.position for atom in atoms if atom.symbol == 'Ru'], axis=0)
+
+    for i, ru_index in enumerate(top_sites):
+        pos_top = atoms[ru_index].position  # Ru atom serving as the top site
+        direction = pos_top - mass_center
+        direction /= np.linalg.norm(direction)
+
+        if np.dot(direction, pos_top - mass_center) < 0:
+            direction = -direction  # Flip direction if needed
+
+        ### **Top1 Placement**
+        n1_position_top1 = pos_top + direction * n_ru_distance
+        n2_position_top1 = n1_position_top1 + direction * n_n_distance
+        n2_top1 = Atoms('N2', positions=[n1_position_top1, n2_position_top1])
+
+        new_atoms_top1 = atoms.copy()
+        new_atoms_top1.extend(n2_top1)
+
+        if get_shortest_ru_n_distance(new_atoms_top1) < 1.5:
+            write(f"POSCAR_top1_{i+1}_check1", new_atoms_top1, format='vasp')
+            direction = -direction
+            n1_position_top1 = pos_top + direction * n_ru_distance
+            n2_position_top1 = n1_position_top1 + direction * n_n_distance
+            n2_top1 = Atoms('N2', positions=[n1_position_top1, n2_position_top1])
+            new_atoms_top1 = atoms.copy()
+            new_atoms_top1.extend(n2_top1)
+
+            if get_shortest_ru_n_distance(new_atoms_top1) < 1.5:
+                write(f"POSCAR_top1_{i+1}_check2", new_atoms_top1, format='vasp')
+            else:
+                write(f"POSCAR_top1_{i+1}.vasp", new_atoms_top1, format='vasp')
+        else:
+            write(f"POSCAR_top1_{i+1}.vasp", new_atoms_top1, format='vasp')
+
+        ### **Top2 Placement**
+        nn_center = pos_top + direction * n_ru_distance
+        perp_vector = np.cross(direction, [0, 0, 1])
+        if np.linalg.norm(perp_vector) < 1e-6:
+            perp_vector = np.cross(direction, [1, 0, 0])
+        perp_vector /= np.linalg.norm(perp_vector)
+
+        n1_position_top2 = nn_center - perp_vector * (n_n_distance / 2)
+        n2_position_top2 = nn_center + perp_vector * (n_n_distance / 2)
+        n2_top2 = Atoms('N2', positions=[n1_position_top2, n2_position_top2])
+
+        new_atoms_top2 = atoms.copy()
+        new_atoms_top2.extend(n2_top2)
+
+        write(f"POSCAR_top2_{i+1}.vasp", new_atoms_top2, format='vasp')
+
+def add_N2_bridge_sites(atoms, n_ru_distance=2.15, n_n_distance=1.19):
+    """
+    Add N2 molecules at bridge adsorption sites (Bridge-1 and Bridge-2).
+    """
+
+    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal='Ru', mult=0.9)
+    mass_center = np.mean([atom.position for atom in atoms if atom.symbol == 'Ru'], axis=0)
+
+    for i, (ru1, ru2) in enumerate(bridge_sites):
+        pos1, pos2 = atoms[ru1].position, atoms[ru2].position
+        bridge_mid = (pos1 + pos2) / 2
+        direction = bridge_mid - mass_center
+        direction /= np.linalg.norm(direction)
+
+        ### **Bridge-1 Placement**
+        nn_center = bridge_mid + direction * n_ru_distance
+        ru_vector = pos2 - pos1
+        ru_vector /= np.linalg.norm(ru_vector)
+
+        n1_position_bridge1 = nn_center - ru_vector * (n_n_distance / 2)
+        n2_position_bridge1 = nn_center + ru_vector * (n_n_distance / 2)
+        n2_bridge1 = Atoms('N2', positions=[n1_position_bridge1, n2_position_bridge1])
+
+        new_atoms_bridge1 = atoms.copy()
+        new_atoms_bridge1.extend(n2_bridge1)
+
+        if get_shortest_ru_n_distance(new_atoms_bridge1) < 1.5:
+            write(f"POSCAR_bridge1_{i+1}_check1", new_atoms_bridge1, format='vasp')
+            direction = -direction
+            n1_position_bridge1 = nn_center - ru_vector * (n_n_distance / 2)
+            n2_position_bridge1 = nn_center + ru_vector * (n_n_distance / 2)
+            n2_bridge1 = Atoms('N2', positions=[n1_position_bridge1, n2_position_bridge1])
+            new_atoms_bridge1 = atoms.copy()
+            new_atoms_bridge1.extend(n2_bridge1)
+
+            if get_shortest_ru_n_distance(new_atoms_bridge1) < 1.5:
+                write(f"POSCAR_bridge1_{i+1}_check2", new_atoms_bridge1, format='vasp')
+            else:
+                write(f"POSCAR_bridge1_{i+1}.vasp", new_atoms_bridge1, format='vasp')
+        else:
+            write(f"POSCAR_bridge1_{i+1}.vasp", new_atoms_bridge1, format='vasp')
+
+        ### **Bridge-2 Placement**
+        shared_ru = ru1 if ru1 in connections[ru2] else ru2
+        other_ru = ru2 if shared_ru == ru1 else ru1
+        nn_center = atoms[shared_ru].position + direction * n_ru_distance
+
+        n1_position_bridge2 = nn_center + ru_vector * (n_n_distance / 2)
+        n2_position_bridge2 = nn_center - ru_vector * (n_n_distance / 2)
+        n2_bridge2 = Atoms('N2', positions=[n1_position_bridge2, n2_position_bridge2])
+
+        new_atoms_bridge2 = atoms.copy()
+        new_atoms_bridge2.extend(n2_bridge2)
+
+        write(f"POSCAR_bridge2_{i+1}.vasp", new_atoms_bridge2, format='vasp')
+
+
+def add_hollow_sites(atoms, n_ru_distance=1.95, n_n_distance=1.19, n1_height=1.5):
+    """
+    Add N2 molecules at hollow adsorption sites (FCC-1, FCC-2, FCC-3).
+    """
+
+    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal='Ru', mult=0.9)
+    ru_positions = np.array([atom.position for atom in atoms if atom.symbol == 'Ru'])
+    mass_center = np.mean(ru_positions, axis=0)
+
+    for i, (ru1, ru2, ru3) in enumerate(hollow_sites):
+        triangle_sites = [ru1, ru2, ru3]
+
+        if not is_exposed_triangle(atoms, triangle_sites, height=2.5):
+            print(f"Skipping hollow site {ru1+1}, {ru2+1}, {ru3+1} (not exposed)")
+            continue
+
+        pos1, pos2, pos3 = atoms[ru1].position, atoms[ru2].position, atoms[ru3].position
+        hollow_center = np.mean([pos1, pos2, pos3], axis=0)
+
+        # **Compute outward direction from mass center to hollow site**
+        direction = hollow_center - mass_center
+        direction /= np.linalg.norm(direction)
+
+        if np.dot(direction, hollow_center - mass_center) < 0:
+            direction = -direction  # Flip direction vector if needed
+
+        normal = np.cross(pos2 - pos1, pos3 - pos1)
+        normal /= np.linalg.norm(normal)
+
+        ### **FCC-1 Placement**
+        n1_position_fcc1 = (pos1 + pos2) / 2 + direction * n_ru_distance
+        n2_position_fcc1 = (pos2 + pos3) / 2 + direction * n_ru_distance
+        n2_fcc1 = Atoms('N2', positions=[n1_position_fcc1, n2_position_fcc1])
+
+        new_atoms_fcc1 = atoms.copy()
+        new_atoms_fcc1.extend(n2_fcc1)
+
+        if get_shortest_ru_n_distance(new_atoms_fcc1) < 1.5:
+            write(f"POSCAR_fcc1_{i+1}_check1", new_atoms_fcc1, format='vasp')
+            print(f"Warning: Shortest Ru-N bond too short in POSCAR_fcc1_{i+1}.vasp, flipping direction...")
+            direction = -direction
+            n1_position_fcc1 = (pos1 + pos2) / 2 + direction * n_ru_distance
+            n2_position_fcc1 = (pos2 + pos3) / 2 + direction * n_ru_distance
+            n2_fcc1 = Atoms('N2', positions=[n1_position_fcc1, n2_position_fcc1])
+            new_atoms_fcc1 = atoms.copy()
+            new_atoms_fcc1.extend(n2_fcc1)
+
+            if get_shortest_ru_n_distance(new_atoms_fcc1) < 1.5:
+                write(f"POSCAR_fcc1_{i+1}_check2", new_atoms_fcc1, format='vasp')
+            else:
+                write(f"POSCAR_fcc1_{i+1}.vasp", new_atoms_fcc1, format='vasp')
+        else:
+            write(f"POSCAR_fcc1_{i+1}.vasp", new_atoms_fcc1, format='vasp')
+
+        ### **FCC-2 Placement**
+        n1_position_fcc2 = hollow_center + normal * n1_height
+        perp_vector = np.cross(normal, direction)
+        perp_vector /= np.linalg.norm(perp_vector)
+        n2_position_fcc2 = n1_position_fcc2 + perp_vector * n_n_distance
+        n2_fcc2 = Atoms('N2', positions=[n1_position_fcc2, n2_position_fcc2])
+
+        new_atoms_fcc2 = atoms.copy()
+        new_atoms_fcc2.extend(n2_fcc2)
+
+        if get_shortest_ru_n_distance(new_atoms_fcc2) < 1.5:
+            write(f"POSCAR_fcc2_{i+1}_check1", new_atoms_fcc2, format='vasp')
+            direction = -direction
+            n2_position_fcc2 = n1_position_fcc2 + perp_vector * n_n_distance
+            n2_fcc2 = Atoms('N2', positions=[n1_position_fcc2, n2_position_fcc2])
+            new_atoms_fcc2 = atoms.copy()
+            new_atoms_fcc2.extend(n2_fcc2)
+
+            if get_shortest_ru_n_distance(new_atoms_fcc2) < 1.5:
+                write(f"POSCAR_fcc2_{i+1}_check2", new_atoms_fcc2, format='vasp')
+            else:
+                write(f"POSCAR_fcc2_{i+1}.vasp", new_atoms_fcc2, format='vasp')
+        else:
+            write(f"POSCAR_fcc2_{i+1}.vasp", new_atoms_fcc2, format='vasp')
+
+        ### **FCC-3 Placement**
+        n1_position_fcc3 = hollow_center + normal * n1_height
+        closest_ru = min([pos1, pos2, pos3], key=lambda p: np.linalg.norm(p - n1_position_fcc3))
+        n2_position_fcc3 = n1_position_fcc3 + perp_vector * n_n_distance
+        n2_fcc3 = Atoms('N2', positions=[n1_position_fcc3, n2_position_fcc3])
+
+        new_atoms_fcc3 = atoms.copy()
+        new_atoms_fcc3.extend(n2_fcc3)
+
+        if get_shortest_ru_n_distance(new_atoms_fcc3) < 1.5:
+            write(f"POSCAR_fcc3_{i+1}_check1", new_atoms_fcc3, format='vasp')
+            direction = -direction
+            n2_position_fcc3 = n1_position_fcc3 + perp_vector * n_n_distance
+            n2_fcc3 = Atoms('N2', positions=[n1_position_fcc3, n2_position_fcc3])
+            new_atoms_fcc3 = atoms.copy()
+            new_atoms_fcc3.extend(n2_fcc3)
+
+            if get_shortest_ru_n_distance(new_atoms_fcc3) < 1.5:
+                write(f"POSCAR_fcc3_{i+1}_check2", new_atoms_fcc3, format='vasp')
+            else:
+                write(f"POSCAR_fcc3_{i+1}.vasp", new_atoms_fcc3, format='vasp')
+        else:
+            write(f"POSCAR_fcc3_{i+1}.vasp", new_atoms_fcc3, format='vasp')
