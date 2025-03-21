@@ -2433,7 +2433,8 @@ def classify_N2_adsorption(atoms):
             adsorption_type = "unknown"
             ru_site_str = "N/A"
 
-        results.append((n1, n2, adsorption_type, ru_site_str))
+        #results.append((n1, n2, adsorption_type, ru_site_str))
+        results.append((adsorption_type, ru_site_str))
 
     return results   
 
