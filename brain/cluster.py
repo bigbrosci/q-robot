@@ -520,6 +520,7 @@ def generate_GA_matrix(cluster_path, list_EF=[str(x) for x in [-0.6, -0.4, -0.2,
     
     data_file = './sorted_data.csv'
     df = pd.read_csv(data_file)
+    # print(df)
     list_path = df['path'].tolist()
     # Set the index to 'Species' for later energy retrieval
     df.set_index('Species', inplace=True)
@@ -535,7 +536,6 @@ def generate_GA_matrix(cluster_path, list_EF=[str(x) for x in [-0.6, -0.4, -0.2,
     # Prepare header for the GA matrix DataFrame
     header = ['site'] + groups
     GA_matrix = []
-
     # Loop over each path to build the GA matrix
     for path in list_path: 
         poscar_file = os.path.join(path, 'POSCAR')
@@ -549,8 +549,7 @@ def generate_GA_matrix(cluster_path, list_EF=[str(x) for x in [-0.6, -0.4, -0.2,
         try:
             # Determine the adsorption site type based on the file path
             if 'N2_ads' in full_path:
-                ru_site_str = classify_N2_adsorption(atoms)
-                print(path, ru_site_str)
+                ru_site_str = classify_N2_adsorption(atoms)[-1]
             elif any(keyword in full_path for keyword in ['N_ads', 'NH_ads', 'NH2_ads', 'NH3_ads']):    
                 ru_site_str = classify_single_atom_adsorption(atoms, 'N', 2.4)
             elif 'H_ads' in full_path:
@@ -570,7 +569,7 @@ def generate_GA_matrix(cluster_path, list_EF=[str(x) for x in [-0.6, -0.4, -0.2,
             count = groups_geo.count(group)
             row.append(count)
         GA_matrix.append(row)
-    
+
     # Create a DataFrame from the GA matrix
     df_GA = pd.DataFrame(GA_matrix, columns=header)
     
@@ -588,10 +587,12 @@ def generate_GA_matrix(cluster_path, list_EF=[str(x) for x in [-0.6, -0.4, -0.2,
             raise KeyError("'slab' entry is missing in the Species column.")
         try:
             slab_energy = slab_rows.iloc[0][ef_val]
+
         except KeyError:
             raise KeyError(f"EF value '{ef_val}' not found in the data.")
     
         # Compute the adsorption energy: subtract slab energy and a gas-phase correction
+
         if species in ['H', 'N', 'O']:
             gas_species = species + '2'
             correction = float(gas_dict[gas_species]) / 2
@@ -599,15 +600,18 @@ def generate_GA_matrix(cluster_path, list_EF=[str(x) for x in [-0.6, -0.4, -0.2,
             gas_species = species
             correction = float(gas_dict[gas_species])
             
+        # print('Eslab', slab_energy)
         try:
             df[col_name] = df[ef_val] - slab_energy - correction
+            # print('GOOD333')
         except KeyError:
             raise KeyError(f"Column '{ef_val}' not found in the data.")
         
         # Add the computed energy column to the GA matrix DataFrame.
         # (Assumes the row order of df and df_GA is the same.)
         df_GA[col_name] = df[col_name]
-        
+
+    # print('Good111')    
     # Remove rows where the site is 'slab' or 'NA'
     df_GA = df_GA[(df_GA['site'] != 'slab') & (df_GA['site'] != 'NA')]
     
@@ -646,7 +650,6 @@ def get_GA_matrix(cluster_path, EF):
         print("GA_matrix.csv not found. Generating GA matrix...")
         # Assumes that generate_GA_matrix is defined and cluster_path is valid.        
         df_matrix = generate_GA_matrix(cluster_path)
-    
     # Determine the adsorption energy prefix.
     if any(col.startswith('Eads_') for col in df_matrix.columns):
         prefix = 'Eads_'
@@ -656,7 +659,7 @@ def get_GA_matrix(cluster_path, EF):
     # Determine the target adsorption energy column name based on EF.
     # If EF is empty, we remove the trailing underscore from the prefix.
     col_name = prefix[:-1] if EF == "" else prefix + EF
-    
+
     # Extract Y values (adsorption energies)
     try:
         Y = df_matrix[col_name].values
@@ -1130,6 +1133,7 @@ def find_all_rhombuses(atoms, connections, surface_indices, bond_length_threshol
 
 
 def get_matrix_to_be_predicted(cluster_path, site):
+    site = str(site)
     # Load or generate GA data
     try: 
         GA_dict, groups = load_ga_data(cluster_path)
@@ -1137,7 +1141,7 @@ def get_matrix_to_be_predicted(cluster_path, site):
         print("Error loading GA data:", e)
         get_CN_GA(cluster_path, mult=0.9)
         GA_dict, groups = load_ga_data(cluster_path)
-        
+    # print(GA_dict)
     """ Get the group matrix of one site"""
     try:
         groups_site = GA_dict[site]
@@ -1152,6 +1156,7 @@ def get_matrix_to_be_predicted(cluster_path, site):
                 num_group += 1
         matrix_site.append(num_group)
     matrix_site = np.array([matrix_site])
+    print('Good2',matrix_site )
     return matrix_site
 
 def predict_Eads_site(cluster_path, species, site, Prop):
@@ -1160,11 +1165,16 @@ def predict_Eads_site(cluster_path, species, site, Prop):
     same species at the provided site.
     Prop values: -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, polarizability, dipole, all are strings.
     '''
-    GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
-    preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
-    ### predict the energies of species at the site    
-    E_species = GA_model.predict(preidct_matrix)
+    pkl_file = os.path.join(cluster_path,f'{species}_GA_{Prop}.pkl')
+    # print(pkl_file)
+    GA_model = joblib.load(pkl_file)  
 
+    # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
+    preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
+    # print('Good3',preidct_matrix )
+    ### predict the energies of species at the site    
+    E_species = GA_model.predict(preidct_matrix)[0]
+    # print(E_species)
     return E_species
 
 
@@ -1188,18 +1198,20 @@ def convert_sites(sites_list):
     """
     if len(sites_list) != 4:
         raise ValueError("sites_list must contain exactly four elements corresponding to A, B, C, and D.")
+    sites_list = [i + 1 for i in sites_list]
     A, B, C, D = sites_list
     site_dict = {}
     site_dict["top_A"] = str(A)
     site_dict["top_B"] = str(B)
     site_dict["top_C"] = str(C)
     site_dict["top_D"] = str(D)
-    site_dict["bridge_A-B"] = f"{min(A, B)}-{max(A, B)}"
-    site_dict["bridge_B-C"] = f"{min(B, C)}-{max(B, C)}"
-    site_dict["bridge_C-D"] = f"{min(C, D)}-{max(C, D)}"
-    site_dict["bridge_D-A"] = f"{min(D, A)}-{max(D, A)}"
-    site_dict["hollow_ABD"] = "-".join(str(x) for x in sorted([A, B, D]))
-    site_dict["hollow_BCD"] = "-".join(str(x) for x in sorted([B, C, D]))
+    site_dict["bridge_A-B"] = f"{min(A, B)}_{max(A, B)}"
+    site_dict["bridge_B-C"] = f"{min(B, C)}_{max(B, C)}"
+    site_dict["bridge_C-D"] = f"{min(C, D)}_{max(C, D)}"
+    site_dict["bridge_D-A"] = f"{min(D, A)}_{max(D, A)}"
+    site_dict["hollow_ABD"] = "_".join(str(x) for x in sorted([A, B, D]))
+    site_dict["hollow_BCD"] = "_".join(str(x) for x in sorted([B, C, D]))
+    print(site_dict)
     return site_dict
 
 # ------------------ Modified Helper Function ------------------
@@ -1220,7 +1232,7 @@ def select_best_site(cluster_path, species, sites, Prop, site_mapping=None):
     """
     energy_dict = {}
     for site in sites:
-        candidate = site_mapping[site] if (site_mapping is not None and site in site_mapping) else site
+        candidate = str(site_mapping[site]) if (site_mapping is not None and site in site_mapping) else site
         Eads = predict_Eads_site(cluster_path, species, candidate, Prop)
         energy_dict[site] = Eads
         print(f"{species} at site {site} ({candidate}): Eads = {Eads:.3f} eV")
@@ -1231,15 +1243,15 @@ def select_best_site(cluster_path, species, sites, Prop, site_mapping=None):
 # ------------------ Candidate Mappings ------------------
 
 # (1) For NH3 adsorption:
-nh3_candidates = ["A", "B", "C", "D"]
+nh3_candidates = ["top_A", "top_B", "top_C", "top_D"]
 
 # (2) For NH3 → NH2 + H:
 def get_nh2_candidates(nh3_site):
     mapping = {
-        "A": ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
-        "B": ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
-        "C": ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
-        "D": ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"]
+        "top_A": ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
+        "top_B": ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+        "top_C": ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
+        "top_D": ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"]
     }
     return mapping.get(nh3_site, [])
 
@@ -1274,7 +1286,7 @@ nh2_to_nh_candidates = {
 # For H in Step 3 (H determined by NH):
 nh_to_h_candidates = {
     "top_A":     ["top_B", "top_D", "top_C", "hollow_ABD", "hollow_BCD"],
-    "top_B":     ["top_A", "top_C", "top_D", "bridge_A-B", "bridge_B-C", "bridge_A-D", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
+    "top_B":     ["top_A", "top_C", "top_D", "bridge_A-B", "bridge_B-C", "bridge_D-A", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
     "top_C":     ["top_B", "top_D", "top_A", "bridge_B-C", "bridge_C-D", "bridge_A-B", "bridge_D-A", "hollow_BCD", "hollow_ABD"],
     "top_D":     ["top_A", "top_B", "top_C", "bridge_C-D", "bridge_D-A", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
     "bridge_A-B": ["top_C", "top_D", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
@@ -1310,6 +1322,7 @@ def determine_NH3_configuration(cluster_path, Prop, site_mapping=None):
 # Step 2: NH₃ → NH₂ + H (H determined by NH2)
 def determine_NH2_configuration(cluster_path, Prop, best_NH3_site, site_mapping=None):
     nh2_candidates = get_nh2_candidates(best_NH3_site)
+    print('Good1',nh2_candidates )
     best_NH2_site, energies_NH2 = select_best_site(cluster_path, "NH2", nh2_candidates, Prop, site_mapping)
     candidate_H_sites = nh2_to_h_candidates_step2.get(best_NH2_site, [])
     if candidate_H_sites:
@@ -1352,7 +1365,7 @@ def determine_N_configuration(cluster_path, Prop, best_NH_site, site_mapping=Non
         "H3": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}
     }
 
-# N₂ Adsorption
+# Step 5: N₂ Adsorption
 def determine_N2_configuration(cluster_path, Prop, site_mapping=None):
     candidate_sites = [
         "top_A", "top_B", "top_C", "top_D",
@@ -1380,7 +1393,7 @@ def determine_full_configuration(cluster_path, Prop, sites_list=None):
       "NH3", "NH2", "NH", "N", "N2", "H1", "H2", and "H3".
     """
     site_mapping = convert_sites(sites_list) if sites_list is not None else None
-
+    print('site_mapping', site_mapping)
     config_NH3 = determine_NH3_configuration(cluster_path, Prop, site_mapping)
     config_NH2 = determine_NH2_configuration(cluster_path, Prop, config_NH3["site"], site_mapping)
     config_NH = determine_NH_configuration(cluster_path, Prop, config_NH2["NH2"]["site"], site_mapping)
@@ -2032,7 +2045,7 @@ def get_active_sites(cluster_path):   # Path: the cluster model directory
     list_file = os.path.join(cluster_path, 'list')   ### list all the top sites in one line
     if not os.path.exists(list_file):
         # print("Warning: No list file found. Examine the exposed sites using Coordination Numbers.")
-        surface_indices = get_top_sites(atoms, metal, mult=0.9)  ## Seems that this method is not ideal
+        top_indices = get_top_sites(atoms, metal, mult=0.9)  ## Seems that this method is not ideal
     else:
         with open(list_file, 'r') as f_in:
             top_indices = f_in.readline().rstrip().split()
@@ -2050,21 +2063,24 @@ def get_active_sites(cluster_path):   # Path: the cluster model directory
     l_rhombus  = []
     for bridge_site in bridge_list: 
         B, D  =  bridge_site[:]
-        indices = find_rhombus(atoms, surface_indices, B, D, bond_threshold=3.0)
+        indices = find_rhombus(atoms, top_indices, B, D, bond_threshold=3.0)
         l_rhombus.append(indices)
        
     l_rhombus = [item for item in l_rhombus if item] ## remove the empty 
 
     ############## Step3: categorize  rhombus sites: planar or edge
-    coplanar_threshold = 0.5  # Adjust threshold as needed, unit is Å
-    coplanar_rhombus = filter_coplanar_rhombuses(l_rhombus, atoms, coplanar_threshold)
-    edge_rhombus = filter_rhombuses_by_dihedral(l_rhombus, atoms, 40, 120)
+    planar, non_planar = filter_rhombus_by_dihedral(l_rhombus, atoms, dihedral_threshold=120)
+    new_planar, new_non_planar, invalid_rhombus = filter_rhombus_by_AC_BD(planar, non_planar, atoms, AC_cutoff=3.0)
+    # coplanar_threshold = 0.5  # Adjust threshold as needed, unit is Å
+    # coplanar_rhombus = filter_coplanar_rhombuses(l_rhombus, atoms, coplanar_threshold)
+    # edge_rhombus = filter_rhombuses_by_dihedral(l_rhombus, atoms, 40, 120)
 
     write_indices_to_file(os.path.join(cluster_path, 'all_sites.txt'), l_rhombus)
-    write_indices_to_file(os.path.join(cluster_path, 'planar_sites.txt'), coplanar_rhombus)
-    write_indices_to_file(os.path.join(cluster_path, 'edge_sites.txt'), edge_rhombus)
+    write_indices_to_file(os.path.join(cluster_path, 'planar_sites.txt'), new_planar)
+    write_indices_to_file(os.path.join(cluster_path, 'edge_sites.txt'), new_non_planar)
+    write_indices_to_file(os.path.join(cluster_path, 'invalid_sites.txt'), invalid_rhombus)
 
-    return l_rhombus, coplanar_rhombus, edge_rhombus
+    return l_rhombus, new_planar, new_non_planar
 
 ################## Section MKM
 
