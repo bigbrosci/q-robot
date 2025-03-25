@@ -72,7 +72,8 @@ def analyze_all_folders(base_dir="."):
     print("✅ Step 1: Saved full data to data.csv")
 
     # Step 2: Analyze data and find lowest energy per Ads_site
-    df_analyzed = df.loc[df.groupby('Ads_site')['E'].idxmin()].reset_index(drop=True)
+    #df_analyzed = df.loc[df.groupby('Ads_site')['E'].idxmin()].reset_index(drop=True)
+    df_analyzed = df.loc[df.groupby(['Ads_site', 'Ads_config'])['E'].idxmin()].reset_index(drop=True)
     df_analyzed.to_csv("data_analyzed.csv", index=False)
     print("✅ Step 2: Saved lowest energy per Ads_site to data_analyzed.csv")
 
