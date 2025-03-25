@@ -2343,7 +2343,7 @@ def is_valid_bridge3(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
     angle_rad = np.arccos(np.dot(n2_vector, ru_vector))
     angle_deg = np.degrees(angle_rad)
 
-    return 75 <= angle_deg <= 90  # Allow angle range between 75°-90°
+    return 75 <= angle_deg <= 115  # Allow angle range between 75°-90°
 
 
 
