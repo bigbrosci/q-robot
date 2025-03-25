@@ -1156,7 +1156,7 @@ def get_matrix_to_be_predicted(cluster_path, site):
                 num_group += 1
         matrix_site.append(num_group)
     matrix_site = np.array([matrix_site])
-    print('Good2',matrix_site )
+
     return matrix_site
 
 def predict_Eads_site(cluster_path, species, site, Prop):
@@ -1211,7 +1211,7 @@ def convert_sites(sites_list):
     site_dict["bridge_D-A"] = f"{min(D, A)}_{max(D, A)}"
     site_dict["hollow_ABD"] = "_".join(str(x) for x in sorted([A, B, D]))
     site_dict["hollow_BCD"] = "_".join(str(x) for x in sorted([B, C, D]))
-    print(site_dict)
+    # print(site_dict)
     return site_dict
 
 # ------------------ Modified Helper Function ------------------
@@ -1235,9 +1235,9 @@ def select_best_site(cluster_path, species, sites, Prop, site_mapping=None):
         candidate = str(site_mapping[site]) if (site_mapping is not None and site in site_mapping) else site
         Eads = predict_Eads_site(cluster_path, species, candidate, Prop)
         energy_dict[site] = Eads
-        print(f"{species} at site {site} ({candidate}): Eads = {Eads:.3f} eV")
+        # print(f"{species} at site {site} ({candidate}): Eads = {Eads:.3f} eV")
     best_site = min(energy_dict, key=energy_dict.get)
-    print(f"Best {species} site: {best_site} with Eads = {energy_dict[best_site]:.3f} eV\n")
+    # print(f"Best {species} site: {best_site} with Eads = {energy_dict[best_site]:.3f} eV\n")
     return best_site, energy_dict
 
 # ------------------ Candidate Mappings ------------------
@@ -1322,7 +1322,7 @@ def determine_NH3_configuration(cluster_path, Prop, site_mapping=None):
 # Step 2: NH₃ → NH₂ + H (H determined by NH2)
 def determine_NH2_configuration(cluster_path, Prop, best_NH3_site, site_mapping=None):
     nh2_candidates = get_nh2_candidates(best_NH3_site)
-    print('Good1',nh2_candidates )
+    # print('Good1',nh2_candidates )
     best_NH2_site, energies_NH2 = select_best_site(cluster_path, "NH2", nh2_candidates, Prop, site_mapping)
     candidate_H_sites = nh2_to_h_candidates_step2.get(best_NH2_site, [])
     if candidate_H_sites:
@@ -1393,7 +1393,7 @@ def determine_full_configuration(cluster_path, Prop, sites_list=None):
       "NH3", "NH2", "NH", "N", "N2", "H1", "H2", and "H3".
     """
     site_mapping = convert_sites(sites_list) if sites_list is not None else None
-    print('site_mapping', site_mapping)
+    # print('site_mapping', site_mapping)
     config_NH3 = determine_NH3_configuration(cluster_path, Prop, site_mapping)
     config_NH2 = determine_NH2_configuration(cluster_path, Prop, config_NH3["site"], site_mapping)
     config_NH = determine_NH_configuration(cluster_path, Prop, config_NH2["NH2"]["site"], site_mapping)
@@ -1420,46 +1420,105 @@ def compute_EDFT(final_config, gas_dict):
       - EDFT(NH2) = Eads(NH2) + E(slab) + E(NH2_gas)
       - EDFT(NH)  = Eads(NH)  + E(slab) + E(NH_gas)
       - For N, H1, H2, and H3, use:
-            EDFT = Eads(H) + E(slab) + 0.5 * E(H2_gas)
+            EDFT = Eads + E(slab) + 0.5 * E(H2_gas)
       - EDFT(N2)  = Eads(N2)  + E(slab) + E(N2_gas)
-    
-    The final_config dictionary is expected to have the form:
+
+    Returns a dictionary:
       {
-         "NH3": (site, Eads_NH3),
-         "NH2": (site, Eads_NH2),
-         "NH":  (site, Eads_NH),
-         "N":   (site, Eads_N),
-         "N2":  (site, Eads_N2),
-         "H1":  (site, Eads_H1),
-         "H2":  (site, Eads_H2),
-         "H3":  (site, Eads_H3)
+         "NH3": (site, Eads, EDFT),
+         ...
       }
-    
-    The gas_dict contains the reference energies, e.g.:
-      gas_dict["slab"], gas_dict["NH3"], gas_dict["NH2"], gas_dict["NH"], 
-      gas_dict["H2"], gas_dict["N2"], etc.
-    
-    Returns a new dictionary mapping each species to a tuple (site, EDFT).
     """
     edft = {}
-    edft["NH3"] = (final_config["NH3"][0],
-                   final_config["NH3"][1] + gas_dict["slab"] + gas_dict["NH3"])
-    edft["NH2"] = (final_config["NH2"][0],
-                   final_config["NH2"][1] + gas_dict["slab"] + gas_dict["NH2"])
-    edft["NH"]  = (final_config["NH"][0],
-                   final_config["NH"][1] + gas_dict["slab"] + gas_dict["NH"])
-    # For N, H1, H2, and H3, use the same correction: Eads(H) + slab + 0.5 * H2_gas.
-    edft["N"]   = (final_config["N"][0],
-                   final_config["N"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
-    edft["H1"]  = (final_config["H1"][0],
-                   final_config["H1"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
-    edft["H2"]  = (final_config["H2"][0],
-                   final_config["H2"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
-    edft["H3"]  = (final_config["H3"][0],
-                   final_config["H3"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
-    edft["N2"]  = (final_config["N2"][0],
-                   final_config["N2"][1] + gas_dict["slab"] + gas_dict["N2"])
+
+    # Common pattern
+    edft["NH3"] = (
+        final_config["NH3"][0],
+        final_config["NH3"][1],
+        final_config["NH3"][1] + gas_dict["slab"] + gas_dict["NH3"]
+    )
+
+    edft["NH2"] = (
+        final_config["NH2"][0],
+        final_config["NH2"][1],
+        final_config["NH2"][1] + gas_dict["slab"] + gas_dict["NH2"]
+    )
+
+    edft["NH"] = (
+        final_config["NH"][0],
+        final_config["NH"][1],
+        final_config["NH"][1] + gas_dict["slab"] + gas_dict["NH"]
+    )
+
+    edft["N"] = (
+        final_config["N"][0],
+        final_config["N"][1],
+        final_config["N"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"]
+    )
+
+    for h in ["H1", "H2", "H3"]:
+        edft[h] = (
+            final_config[h][0],
+            final_config[h][1],
+            final_config[h][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"]
+        )
+
+    edft["N2"] = (
+        final_config["N2"][0],
+        final_config["N2"][1],
+        final_config["N2"][1] + gas_dict["slab"] + gas_dict["N2"]
+    )
+
     return edft
+
+
+# def compute_EDFT(final_config, gas_dict):
+#     """
+#     Compute the DFT simulated energy (EDFT) for each species using the following formulas:
+#       - EDFT(NH3) = Eads(NH3) + E(slab) + E(NH3_gas)
+#       - EDFT(NH2) = Eads(NH2) + E(slab) + E(NH2_gas)
+#       - EDFT(NH)  = Eads(NH)  + E(slab) + E(NH_gas)
+#       - For N, H1, H2, and H3, use:
+#             EDFT = Eads(H) + E(slab) + 0.5 * E(H2_gas)
+#       - EDFT(N2)  = Eads(N2)  + E(slab) + E(N2_gas)
+    
+#     The final_config dictionary is expected to have the form:
+#       {
+#          "NH3": (site, Eads_NH3),
+#          "NH2": (site, Eads_NH2),
+#          "NH":  (site, Eads_NH),
+#          "N":   (site, Eads_N),
+#          "N2":  (site, Eads_N2),
+#          "H1":  (site, Eads_H1),
+#          "H2":  (site, Eads_H2),
+#          "H3":  (site, Eads_H3)
+#       }
+    
+#     The gas_dict contains the reference energies, e.g.:
+#       gas_dict["slab"], gas_dict["NH3"], gas_dict["NH2"], gas_dict["NH"], 
+#       gas_dict["H2"], gas_dict["N2"], etc.
+    
+#     Returns a new dictionary mapping each species to a tuple (site, EDFT).
+#     """
+#     edft = {}
+#     edft["NH3"] = (final_config["NH3"][0],
+#                    final_config["NH3"][1] + gas_dict["slab"] + gas_dict["NH3"])
+#     edft["NH2"] = (final_config["NH2"][0],
+#                    final_config["NH2"][1] + gas_dict["slab"] + gas_dict["NH2"])
+#     edft["NH"]  = (final_config["NH"][0],
+#                    final_config["NH"][1] + gas_dict["slab"] + gas_dict["NH"])
+#     # For N, H1, H2, and H3, use the same correction: Eads(H) + slab + 0.5 * H2_gas.
+#     edft["N"]   = (final_config["N"][0],
+#                    final_config["N"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
+#     edft["H1"]  = (final_config["H1"][0],
+#                    final_config["H1"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
+#     edft["H2"]  = (final_config["H2"][0],
+#                    final_config["H2"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
+#     edft["H3"]  = (final_config["H3"][0],
+#                    final_config["H3"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
+#     edft["N2"]  = (final_config["N2"][0],
+#                    final_config["N2"][1] + gas_dict["slab"] + gas_dict["N2"])
+#     return edft
 
 def find_rhombus(atoms, top_list, B, D, bond_threshold=2.6):
     """
