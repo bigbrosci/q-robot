@@ -1,0 +1,2 @@
+#!/bin/env bash 
+find . -mindepth 1 \( -name  *.log  -o -name "e.*" -o -name run_vasp* -o -name KPOINTS -o -name POTCAR -o -name INCAR -o -name core*  -o -name "e_*" -o -name "o.*" -o -name "o_*" -o -name "err.*" -o -name "out.*" -o -name "REPORT*" -o -name "PCDAT*" -o -name "p4vasp.log" -o -name "vasp.share*" -o -name "gam.*" -o -name "IB*"  -o -name "EI*" -o -name "POTCAR*" \) -delete
