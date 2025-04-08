@@ -381,7 +381,8 @@ def load_ga_data(cluster_path):
     
     return GA_dict, groups
 
-
+def func(x, a, b, c):
+    return -0.5 * a * x**2 - b * x + c
 
 def get_dipole_polarization(GA_matrix):
     """
@@ -400,8 +401,7 @@ def get_dipole_polarization(GA_matrix):
     """
     
     # Define the quadratic function.
-    def func(x, a, b, c):
-        return -0.5 * a * x**2 - b * x + c
+
 
     # Define the x values corresponding to the Eads columns.
     x_values = np.array([-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6])
@@ -410,7 +410,7 @@ def get_dipole_polarization(GA_matrix):
     site_col = 'Site' if 'Site' in GA_matrix.columns else 'site'
     
     # Define the Eads columns exactly as in GA_matrix.csv.
-    eads_cols = ["Eads_-0.6", "Eads_-0.4", "Eads_-0.2", "Eads_0.0", "Eads_0.2", "Eads_0.4", "Eads_0.6"]
+    eads_cols = ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6"]
     
     results_list = []
     
@@ -489,7 +489,7 @@ def update_GA_matrix_with_dipole_polarization(csv_filepath='./GA_matrix.csv'):
     dipole_results = get_dipole_polarization(df_GA)
     
     # Merge the dipole polarization results into the GA_matrix based on the 'site' column.
-    updated_df = df_GA.merge(dipole_results[['site', 'polarizability', 'dipole']], on='site', how='left')
+    updated_df = df_GA.merge(dipole_results[['site', 'polarizability', 'dipole', 'c']], on='site', how='left')
     
     # Overwrite the original GA_matrix CSV file with the updated DataFrame.
     updated_df.to_csv(csv_filepath, index=False)
@@ -498,7 +498,7 @@ def update_GA_matrix_with_dipole_polarization(csv_filepath='./GA_matrix.csv'):
     return updated_df
 
 
-def generate_GA_matrix(cluster_path, list_EF=[str(x) for x in [-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6]]):
+def generate_GA_matrix(cluster_path, list_EF):
     """
     Generate the GA (Group Additivity) matrix and compute adsorption energies.
     
@@ -580,7 +580,8 @@ def generate_GA_matrix(cluster_path, list_EF=[str(x) for x in [-0.6, -0.4, -0.2,
 
     # For each EF value, compute the adsorption energy and add it as a column
     for ef_val in list_EF: 
-        col_name = 'Eads_' + ef_val
+        # col_name = 'Eads_' + ef_val
+        col_name = ef_val
         # Retrieve the slab energy from df where Species equals 'slab'
         slab_rows = df[df['Species'] == 'slab']
         if slab_rows.empty:
@@ -651,23 +652,32 @@ def get_GA_matrix(cluster_path, EF):
         # Assumes that generate_GA_matrix is defined and cluster_path is valid.        
         df_matrix = generate_GA_matrix(cluster_path)
     # Determine the adsorption energy prefix.
-    if any(col.startswith('Eads_') for col in df_matrix.columns):
-        prefix = 'Eads_'
-    else:
-        raise KeyError("No adsorption energy columns found in GA_matrix.")
+    
+    prop_list = ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6", "polarizability", "dipole", "c"]
+   
+    # if any(col.startswith('Eads_') for col in df_matrix.columns):
+    #     prefix = 'Eads_'
+    # else:
+    #     raise KeyError("No adsorption energy columns found in GA_matrix.")
     
     # Determine the target adsorption energy column name based on EF.
     # If EF is empty, we remove the trailing underscore from the prefix.
-    col_name = prefix[:-1] if EF == "" else prefix + EF
+    # col_name = prefix[:-1] if EF == "" else prefix + EF
 
+    # # Extract Y values (adsorption energies)
+    # try:
+    #     Y = df_matrix[col_name].values
+    # except KeyError:
+    #     raise KeyError(f"The expected adsorption energy column '{col_name}' is not found in the GA matrix.")
+    
     # Extract Y values (adsorption energies)
     try:
-        Y = df_matrix[col_name].values
+        Y = df_matrix[EF].values
     except KeyError:
-        raise KeyError(f"The expected adsorption energy column '{col_name}' is not found in the GA matrix.")
+        raise KeyError(f"The expected adsorption energy column '{EF}' is not found in the GA matrix.")
     
     # Drop the 'site' column and all adsorption energy columns (those starting with the prefix) to get X.
-    cols_to_drop = ['site'] + [col for col in df_matrix.columns if col.startswith(prefix)]
+    cols_to_drop = ['site'] + [col for col in prop_list]
     df_features = df_matrix.drop(columns=cols_to_drop)
     X = df_features.values
     n_group = df_features.shape[1]
@@ -1165,17 +1175,48 @@ def predict_Eads_site(cluster_path, species, site, Prop):
     same species at the provided site.
     Prop values: -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, polarizability, dipole, all are strings.
     '''
-    pkl_file = os.path.join(cluster_path,f'{species}_GA_{Prop}.pkl')
-    # print(pkl_file)
-    GA_model = joblib.load(pkl_file)  
-
-    # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
-    preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
-    # print('Good3',preidct_matrix )
-    ### predict the energies of species at the site    
-    E_species = GA_model.predict(preidct_matrix)[0]
-    # print(E_species)
-    return E_species
+    try: 
+        pkl_file = os.path.join(cluster_path,f'{species}_GA_{Prop}.pkl')
+        # print(pkl_file)
+        GA_model = joblib.load(pkl_file)  
+    
+        # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
+        preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
+        # print('Good3',preidct_matrix )
+        ### predict the energies of species at the site    
+        E_species_ef = GA_model.predict(preidct_matrix)[0]
+        
+    except: 
+        pkl_file = os.path.join(cluster_path,f'{species}_GA_0.0.pkl')
+        # print(pkl_file)
+        GA_model = joblib.load(pkl_file)  
+    
+        # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
+        preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
+        # print('Good3',preidct_matrix )
+        ### predict the energies of species at the site    
+        E_species = GA_model.predict(preidct_matrix)[0]
+        
+        pkl_polarizability = os.path.join(cluster_path,f'{species}_GA_polarizability.pkl')
+        pkl_dipole = os.path.join(cluster_path,f'{species}_GA_dipole.pkl')
+        pkl_constant = os.path.join(cluster_path,f'{species}_GA_c.pkl')
+        
+        polarizability_model = joblib.load(pkl_polarizability)  
+        dipole_model = joblib.load(pkl_dipole)  
+        constant_model = joblib.load(pkl_constant)  
+        
+        polarizability  = polarizability_model.predict(preidct_matrix)[0]
+        dipole  = dipole_model.predict(preidct_matrix)[0]
+        constant = constant_model.predict(preidct_matrix)[0]
+        
+        constant = 0
+        E_species_ef = func(E_species, polarizability, dipole, constant)  
+    
+        # def func(x, a, b, c):
+        #     return -0.5 * a * x**2 - b * x + c
+        
+        # print(E_species)
+    return E_species_ef
 
 
 # ------------------ Site Conversion ------------------
