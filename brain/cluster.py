@@ -11,6 +11,10 @@ import joblib  # import the joblib library
 from ase import Atoms, io
 import platform
 import re
+import shutil
+import subprocess
+from openpyxl import load_workbook
+
 
 import numpy as np
 from ase import Atoms
@@ -60,7 +64,7 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.decomposition import PCA
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.pipeline import make_pipeline
-from xgboost import XGBRegressor
+# from xgboost import XGBRegressor
 from scipy.optimize import curve_fit
 from scipy.stats import pearsonr
 from sklearn.metrics import mean_absolute_error, mean_squared_error
@@ -451,9 +455,9 @@ def get_dipole_polarization(GA_matrix):
                 'polarizability': a,
                 'dipole': b,
                 'c': c,
-                'R2': R2,
-                'MAE': mae,
-                'RMSE': rmse
+                # 'R2': R2,
+                # 'MAE': mae,
+                # 'RMSE': rmse
             })
         except Exception as e:
             print(f"Error fitting curve for site '{site}' (index {idx}): {e}")
@@ -461,6 +465,8 @@ def get_dipole_polarization(GA_matrix):
     
     # Convert the list to a DataFrame and return.
     results_df = pd.DataFrame(results_list)
+    print(results_df)
+    
     return results_df
 
 def update_GA_matrix_with_dipole_polarization(csv_filepath='./GA_matrix.csv'):
@@ -653,6 +659,7 @@ def get_GA_matrix(cluster_path, EF):
         df_matrix = generate_GA_matrix(cluster_path)
     # Determine the adsorption energy prefix.
     
+    print(df_matrix)
     prop_list = ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6", "polarizability", "dipole", "c"]
    
     # if any(col.startswith('Eads_') for col in df_matrix.columns):
@@ -841,7 +848,7 @@ def refine_models(n_group):
         "GB": GradientBoostingRegressor(n_estimators=n_group*5, max_depth=n_group),
         "SVR": SVR(kernel='linear', C=1.0),
         "GA": PseudoInverseLinearRegression(),
-        "XGB": XGBRegressor(n_estimators=11*5, max_depth=11, learning_rate=0.1),
+        # "XGB": XGBRegressor(n_estimators=11*5, max_depth=11, learning_rate=0.1),
         }
     return models
 
@@ -969,8 +976,8 @@ def active_learning_one_model(models, model_name, EF, X, Y, sites,
         # Train the model on the current training set.
         model = models[model_name]
         model.fit(X_train, Y_train)
-        predictions = model.predict(X_test)
         
+        predictions = model.predict(X_test)
         
         # Save the model for future prediction 
         species  = get_species_from_cwd() 
@@ -1175,47 +1182,54 @@ def predict_Eads_site(cluster_path, species, site, Prop):
     same species at the provided site.
     Prop values: -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, polarizability, dipole, all are strings.
     '''
-    try: 
-        pkl_file = os.path.join(cluster_path,f'{species}_GA_{Prop}.pkl')
+    preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
+    
+    # try: 
+    #     pkl_file = os.path.join(cluster_path,f'{species}_GA_{Prop}.pkl')
+    #     # print(pkl_file)
+    #     GA_model = joblib.load(pkl_file)  
+    #     # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
+        
+    #     # print('Good3',preidct_matrix )
+    #     ### predict the energies of species at the site    
+    #     E_species_ef = GA_model.predict(preidct_matrix)[0]
+        
+    #     if species == 'NH3':
+    #         print('E_NH3', E_species_ef, 'site', site)
+        
+    # except: 
+    # try:
+        # pkl_file = os.path.join(cluster_path,f'{species}_GA_0.0.pkl')
         # print(pkl_file)
-        GA_model = joblib.load(pkl_file)  
+        # GA_model = joblib.load(pkl_file)  
     
         # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
-        preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
+        # preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
         # print('Good3',preidct_matrix )
         ### predict the energies of species at the site    
-        E_species_ef = GA_model.predict(preidct_matrix)[0]
+        # E_species = GA_model.predict(preidct_matrix)[0]
+        # print('E', E_species)
         
-    except: 
-        pkl_file = os.path.join(cluster_path,f'{species}_GA_0.0.pkl')
-        # print(pkl_file)
-        GA_model = joblib.load(pkl_file)  
+    pkl_polarizability = os.path.join(cluster_path,f'{species}_GA_polarizability.pkl')
+    pkl_dipole = os.path.join(cluster_path,f'{species}_GA_dipole.pkl')
+    pkl_constant = os.path.join(cluster_path,f'{species}_GA_c.pkl')
     
-        # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
-        preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
-        # print('Good3',preidct_matrix )
-        ### predict the energies of species at the site    
-        E_species = GA_model.predict(preidct_matrix)[0]
-        
-        pkl_polarizability = os.path.join(cluster_path,f'{species}_GA_polarizability.pkl')
-        pkl_dipole = os.path.join(cluster_path,f'{species}_GA_dipole.pkl')
-        pkl_constant = os.path.join(cluster_path,f'{species}_GA_c.pkl')
-        
-        polarizability_model = joblib.load(pkl_polarizability)  
-        dipole_model = joblib.load(pkl_dipole)  
-        constant_model = joblib.load(pkl_constant)  
-        
-        polarizability  = polarizability_model.predict(preidct_matrix)[0]
-        dipole  = dipole_model.predict(preidct_matrix)[0]
-        constant = constant_model.predict(preidct_matrix)[0]
-        
-        constant = 0
-        E_species_ef = func(E_species, polarizability, dipole, constant)  
+    polarizability_model = joblib.load(pkl_polarizability)  
+    dipole_model = joblib.load(pkl_dipole)  
+    constant_model = joblib.load(pkl_constant)  
     
+    polarizability  = polarizability_model.predict(preidct_matrix)[0]
+    dipole  = dipole_model.predict(preidct_matrix)[0]
+    constant = constant_model.predict(preidct_matrix)[0]
+    
+    E_species_ef = func(float(Prop), polarizability, dipole, constant)  
+        
         # def func(x, a, b, c):
-        #     return -0.5 * a * x**2 - b * x + c
+    #     #     return -0.5 * a * x**2 - b * x + c
         
-        # print(E_species)
+    #     print(E_species_ef)
+    # except:
+    #     print('failed')
     return E_species_ef
 
 
@@ -1451,10 +1465,11 @@ def determine_full_configuration(cluster_path, Prop, sites_list=None):
         "H2":  (config_NH["H2"]["site"], config_NH["H2"]["energy"]),
         "H3":  (config_N["H3"]["site"], config_N["H3"]["energy"])
     }
+    
     return final_config
 
 
-def compute_EDFT(final_config, gas_dict):
+def compute_EDFT(ef_value, final_config, gas_dict):
     """
     Compute the DFT simulated energy (EDFT) for each species using the following formulas:
       - EDFT(NH3) = Eads(NH3) + E(slab) + E(NH3_gas)
@@ -1470,96 +1485,51 @@ def compute_EDFT(final_config, gas_dict):
          ...
       }
     """
+    ef_value = float(ef_value)
+    E_slab  = -6.2414 * ef_value**2 - 0.01405 * ef_value - 354.4197 
+    
     edft = {}
 
     # Common pattern
     edft["NH3"] = (
         final_config["NH3"][0],
         final_config["NH3"][1],
-        final_config["NH3"][1] + gas_dict["slab"] + gas_dict["NH3"]
+        final_config["NH3"][1] + E_slab + gas_dict["NH3"]
     )
 
     edft["NH2"] = (
         final_config["NH2"][0],
         final_config["NH2"][1],
-        final_config["NH2"][1] + gas_dict["slab"] + gas_dict["NH2"]
+        final_config["NH2"][1] + E_slab + gas_dict["NH2"]
     )
 
     edft["NH"] = (
         final_config["NH"][0],
         final_config["NH"][1],
-        final_config["NH"][1] + gas_dict["slab"] + gas_dict["NH"]
+        final_config["NH"][1] + E_slab + gas_dict["NH"]
     )
 
     edft["N"] = (
         final_config["N"][0],
         final_config["N"][1],
-        final_config["N"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"]
+        final_config["N"][1] + E_slab + 0.5 * gas_dict["N2"]
     )
 
     for h in ["H1", "H2", "H3"]:
         edft[h] = (
             final_config[h][0],
             final_config[h][1],
-            final_config[h][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"]
+            final_config[h][1] + E_slab + 0.5 * gas_dict["H2"]
         )
 
     edft["N2"] = (
         final_config["N2"][0],
         final_config["N2"][1],
-        final_config["N2"][1] + gas_dict["slab"] + gas_dict["N2"]
+        final_config["N2"][1] + E_slab + gas_dict["N2"]
     )
 
     return edft
 
-
-# def compute_EDFT(final_config, gas_dict):
-#     """
-#     Compute the DFT simulated energy (EDFT) for each species using the following formulas:
-#       - EDFT(NH3) = Eads(NH3) + E(slab) + E(NH3_gas)
-#       - EDFT(NH2) = Eads(NH2) + E(slab) + E(NH2_gas)
-#       - EDFT(NH)  = Eads(NH)  + E(slab) + E(NH_gas)
-#       - For N, H1, H2, and H3, use:
-#             EDFT = Eads(H) + E(slab) + 0.5 * E(H2_gas)
-#       - EDFT(N2)  = Eads(N2)  + E(slab) + E(N2_gas)
-    
-#     The final_config dictionary is expected to have the form:
-#       {
-#          "NH3": (site, Eads_NH3),
-#          "NH2": (site, Eads_NH2),
-#          "NH":  (site, Eads_NH),
-#          "N":   (site, Eads_N),
-#          "N2":  (site, Eads_N2),
-#          "H1":  (site, Eads_H1),
-#          "H2":  (site, Eads_H2),
-#          "H3":  (site, Eads_H3)
-#       }
-    
-#     The gas_dict contains the reference energies, e.g.:
-#       gas_dict["slab"], gas_dict["NH3"], gas_dict["NH2"], gas_dict["NH"], 
-#       gas_dict["H2"], gas_dict["N2"], etc.
-    
-#     Returns a new dictionary mapping each species to a tuple (site, EDFT).
-#     """
-#     edft = {}
-#     edft["NH3"] = (final_config["NH3"][0],
-#                    final_config["NH3"][1] + gas_dict["slab"] + gas_dict["NH3"])
-#     edft["NH2"] = (final_config["NH2"][0],
-#                    final_config["NH2"][1] + gas_dict["slab"] + gas_dict["NH2"])
-#     edft["NH"]  = (final_config["NH"][0],
-#                    final_config["NH"][1] + gas_dict["slab"] + gas_dict["NH"])
-#     # For N, H1, H2, and H3, use the same correction: Eads(H) + slab + 0.5 * H2_gas.
-#     edft["N"]   = (final_config["N"][0],
-#                    final_config["N"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
-#     edft["H1"]  = (final_config["H1"][0],
-#                    final_config["H1"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
-#     edft["H2"]  = (final_config["H2"][0],
-#                    final_config["H2"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
-#     edft["H3"]  = (final_config["H3"][0],
-#                    final_config["H3"][1] + gas_dict["slab"] + 0.5 * gas_dict["H2"])
-#     edft["N2"]  = (final_config["N2"][0],
-#                    final_config["N2"][1] + gas_dict["slab"] + gas_dict["N2"])
-#     return edft
 
 def find_rhombus(atoms, top_list, B, D, bond_threshold=2.6):
     """
@@ -2839,3 +2809,197 @@ def add_hollow_sites(atoms, n_ru_distance=1.95, n_n_distance=1.19, n1_height=1.5
                 write(f"POSCAR_fcc3_{i+1}.vasp", new_atoms_fcc3, format='vasp')
         else:
             write(f"POSCAR_fcc3_{i+1}.vasp", new_atoms_fcc3, format='vasp')
+
+
+### MKM 
+
+def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
+    """
+    根据吸附态字典和 Ru 的能量，生成 replacement_dict，用于替换 Excel Sheet1 中的数据。
+
+    参数：
+    - adsorption_data: 吸附物字典，格式为 {ads: (site, adsorption_energy, total_energy)}
+
+    返回：
+    - replacement_dict: key 为 Excel 中的 A 列项（如 "NH3(T)"），value 为替换后的能量值（float）
+    """
+    # 固定的 slab 能量
+    # E_slab = -354.40596642
+    E_slab  = -6.2414 * ef_value**2 - 0.01405 * ef_value - 354.4197 
+
+    # 初始化 replacement_dict
+    replacement_dict = {
+        "RU(T)": E_slab
+    }
+
+    # 常规吸附物种
+    for species in ['NH3', 'NH2', 'NH', 'N', 'N2']:
+        if species in adsorption_data:
+            replacement_dict[f"{species}(T)"] = adsorption_data[species][2]
+
+    # H1, H2, H3 -> Hv1(T), Hv2(T), Hv3(T)
+    for i in range(1, 4):
+        h_key = f"H{i}"
+        hv_key = f"Hv{i}(T)"
+        if h_key in adsorption_data:
+            replacement_dict[hv_key] = adsorption_data[h_key][2]
+
+    
+    E_NH3 = adsorption_data['NH3'][2]
+    E_NH2 = adsorption_data['NH2'][2]
+    E_NH = adsorption_data['NH'][2]
+    E_N  = adsorption_data['N'][2]
+    E_N_N = 2 * adsorption_data['N'][2] - E_slab + 0.5
+    E_N2 = adsorption_data['N2'][2] 
+    
+    E_H1  = adsorption_data['H1'][2]  
+    E_H2  = adsorption_data['H2'][2] 
+    E_H3  = adsorption_data['H3'][2] 
+    E_H   = min([E_H1,E_H2,E_H3])
+    replacement_dict['H(T)'] = E_H
+    
+    
+    if float(adsorption_data['NH3'][1]) <= -1.9:
+        print('E_NH3', adsorption_data['NH3'])
+    
+    # print(E_NH3, E_NH2, E_H1, E_slab)
+    
+    replacement_dict['N_N(T)'] = E_N_N
+    
+
+    reaction_energy_1 = E_NH2 + E_H1 - E_NH3 - E_slab
+    reaction_energy_2 = E_NH  + E_H2 - E_NH2 - E_slab
+    reaction_energy_3 = E_N   + E_H3 - E_NH  - E_slab
+    reaction_energy_4 = E_N2  - E_N_N
+
+    # Ea = a * ΔE + b
+    Ea_params = [
+        (0.42, 1.36),  # TS1_NH3(T)
+        (0.88, 0.82),  # TS1_NH2(T)
+        (0.47, 0.81),  # TS1_NH(T)
+        (0.87, 2.10)   # TS4_N2(T)
+    ]
+    
+    Ea1 = Ea_params[0][0] * reaction_energy_1 + Ea_params[0][1]
+    Ea2 = Ea_params[1][0] * reaction_energy_2 + Ea_params[1][1]
+    Ea3 = Ea_params[2][0] * reaction_energy_3 + Ea_params[2][1]
+    Ea4 = Ea_params[3][0] * reaction_energy_4 + Ea_params[3][1]
+
+    Ea_list = [Ea1, Ea2, Ea3, Ea4]
+    # print('DE1', reaction_energy_1)
+    # print('Ea', Ea_list)
+    # 
+    Ea_list = [max(0.01, ea) for ea in Ea_list]
+    
+    # print('Ea', Ea_list)
+    Ea1, Ea2, Ea3, Ea4 = Ea_list
+
+    # 过渡态能量
+    replacement_dict['TS1_NH3(T)'] = E_NH3 + Ea1
+    replacement_dict['TS2_NH2(T)'] = E_NH2 + Ea2
+    replacement_dict['TS3_NH(T)']  = E_NH  + Ea3
+    replacement_dict['TS4_N2(T)']  = E_N_N + Ea4
+
+    ref_dict = {k: v - E_slab for k, v in replacement_dict.items()}
+
+    return ref_dict
+
+def update_excel_with_replacement(index_list, replacement_dict, ef_value,
+                                  template_file="NH3_temp.xlsx", base_dir="mkm_inputs", verbose=True):
+    """
+    Create a structured directory based on index and EF, update the "species" sheet 
+    in the Excel template with new data, execute additional workflow commands, and save the result.
+    
+    Parameters:
+        index_list: List of indices used for naming subfolders, e.g. [12, 43, 40, 44]
+        replacement_dict: Dictionary with replacement items, e.g. {"NH3(T)": -375.2, ...}
+        ef_value: External EF value (float, can be negative) for naming subfolders (e.g. -0.3)
+        template_file: Excel template file name; now expected to be located inside base_dir.
+        base_dir: Base directory (e.g. "mkm_inputs")
+        verbose: Whether to print verbose output.
+    """
+    # 1. Build directory paths
+    index_folder = "_".join(map(str, index_list))
+    ef_folder = f"EF_{ef_value:.1f}"  # e.g. EF_-0.3
+    inputs_folder = os.path.join(base_dir, index_folder, ef_folder, 'inputs')
+    os.makedirs(inputs_folder, exist_ok=True)
+    
+    # Create outputs folder at the same level as inputs
+    outputs_folder = os.path.join(base_dir, index_folder, ef_folder, 'outputs')
+    os.makedirs(outputs_folder, exist_ok=True)
+    
+    # 2. Load the Excel template (now assumed to be in base_dir)
+    template_path = os.path.join(base_dir, template_file)
+    if not os.path.exists(template_path):
+        sys.exit(f"Template file not found: {template_path}")
+    wb = load_workbook(template_path)
+    dft_sheet = wb["species"]
+    
+    # 3. Replace data in the sheet: get keys from column A, replace potential energy in column L
+    missing_keys = []
+    print(f"✅ Fill the Excel Template File")
+    for row in dft_sheet.iter_rows(min_row=2, min_col=1, max_col=12):
+        key_cell = row[0]    # Column A (key)
+        target_cell = row[11]  # Column L (the value to replace)
+        key = key_cell.value
+        if key in replacement_dict:
+            target_cell.value = replacement_dict[key]
+            # if verbose:
+                # print(f"✅ Replace: {key} -> {replacement_dict[key]:.6f}")
+        else:
+            missing_keys.append(key)
+    
+    if verbose and missing_keys:
+        print("⚠️ Some keys were not found in replacement_dict, so they were not replaced. Check!")
+        # print("⚠️ The following keys were not found in replacement_dict, so they were not replaced:")
+        # for key in missing_keys:
+        #     print(f"  - {key}")
+    
+    # 4. Save the updated Excel file into the inputs folder
+    output_path = os.path.join(inputs_folder, 'NH3_Input_Data.xlsx')
+    wb.save(output_path)
+    print(f"📁 File saved to: {output_path}")
+    
+    # 5. Copy files to the outputs folder (from base_dir)
+    for filename in ["NH3_MKM_Ru45.py"]:
+        src = os.path.join(base_dir, filename)
+        dst = os.path.join(outputs_folder, filename)
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
+            if verbose:
+                print(f"✅ Copied {filename} to {outputs_folder}")
+        else:
+            print(f"⚠️ File {filename} not found!")
+    
+    # Copy OpenMKM_IO.py to the folder: mkm_inputs/index_folder/ef_folder
+    src_IO = os.path.join(base_dir, "OpenMKM_IO.py")
+    dst_IO_dir = os.path.join(base_dir, index_folder, ef_folder)
+    dst_IO = os.path.join(dst_IO_dir, "OpenMKM_IO.py")
+    if os.path.exists(src_IO):
+        shutil.copy2(src_IO, dst_IO)
+        if verbose:
+            print(f"✅ Copied OpenMKM_IO.py to {dst_IO_dir}")
+    else:
+        print("⚠️ File OpenMKM_IO.py not found!")
+    
+    # 6. Workflow:
+    main_folder = os.path.join(base_dir, index_folder, ef_folder)    
+    
+    # 6.1 Change to main_folder and execute "python3 OpenMKM_IO.py"
+    print("✅ Generating the MKM inputs...")
+    # subprocess.run(["python3", "OpenMKM_IO.py"], cwd=main_folder, check=True)
+    prepare_yaml(main_folder)
+    
+    # # 6.2 Instead of running "bash modify.sh", update the YAML file.
+    # yaml_file = os.path.join(main_folder, "outputs", "thermo.yaml")
+    # print("✅ Updating YAML file in outputs folder...")
+    # update_yaml(yaml_file)
+    
+    # 6.3 In outputs folder, run "python3 NH3_v2.py 600 > mkm.out"
+    print("✅ Running MKM...")
+    T = 600   # Celcius
+    run_mkm(main_folder, T)
+    # subprocess.run("python3 NH3_v2.py 600 > mkm.out", cwd=outputs_folder, shell=True, check=True)
+    
+    print("✅ Workflow completed!\n")
+    
