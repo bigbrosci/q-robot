@@ -69,6 +69,7 @@ from scipy.optimize import curve_fit
 from scipy.stats import pearsonr
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
+from mkm import * 
 
 def round_scientific(number, decimals):
     # Format the number in scientific notation with the desired number of decimals
