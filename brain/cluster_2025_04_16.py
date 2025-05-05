@@ -14,10 +14,6 @@ import re
 import shutil
 import subprocess
 from openpyxl import load_workbook
-import numpy as np
-import pandas as pd
-from scipy.optimize import curve_fit
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
 
 import numpy as np
@@ -393,76 +389,68 @@ def load_ga_data(cluster_path):
 def func(x, a, b, c):
     return -0.5 * a * x**2 - b * x + c
 
+def get_dipole_polarization(GA_matrix):
+    """
+    Perform quadratic curve fitting on the Eads columns of the GA_matrix DataFrame for each row.
+    The x-values are [-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6] and the y-values are taken from the 
+    corresponding columns: 'Eads_-0.6', 'Eads_-0.4', 'Eads_-0.2', 'Eads_0.0', 'Eads_0.2', 'Eads_0.4', 'Eads_0.6'.
+    
+    For each row, a quadratic function is fitted:
+         func(x, a, b, c) = -0.5 * a * x**2 - b * x + c
+    where the parameter 'a' is interpreted as the polarizability and 'b' as the dipole.
+    In addition, the goodness-of-fit metrics R², MAE, and RMSE are computed using scikit-learn's functions.
+    
+    Returns:
+      A DataFrame with the following columns:
+         'site', 'polarizability', 'dipole', 'c', 'R2', 'MAE', 'RMSE'
+    """
+    
+    # Define the quadratic function.
 
-def get_dipole_polarization(GA_matrix, fill_nans_with_fit=True, verbose=True):
-    def func(x, a, b, c):
-        return -0.5 * a * x**2 - b * x + c
 
+    # Define the x values corresponding to the Eads columns.
     x_values = np.array([-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6])
-    eads_cols = ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6"]
+    
+    # Determine the correct column for the site label.
     site_col = 'Site' if 'Site' in GA_matrix.columns else 'site'
-
+    
+    # Define the Eads columns exactly as in GA_matrix.csv.
+    eads_cols = ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6"]
+    
     results_list = []
-    GA_matrix = GA_matrix.copy()  # 避免修改原始 DataFrame
-
+    
+    # Loop through each row of the GA_matrix.
     for idx, row in GA_matrix.iterrows():
         site = row[site_col]
-        y_values_orig = row[eads_cols].values.astype(float)
-        valid_mask = ~np.isnan(y_values_orig)
+        # Extract y values for the current row.
+        y_values = row[eads_cols].values.astype(float)
+        
+        # Remove any NaN values.
+        valid_mask = ~np.isnan(y_values)
         x_fit = x_values[valid_mask]
-        y_fit = y_values_orig[valid_mask]
-
+        y_fit = y_values[valid_mask]
+        
+        # Ensure there are at least 3 data points to perform a quadratic fit.
         if len(x_fit) < 3:
-            if verbose:
-                print(f"Skipping site '{site}' (index {idx}) due to insufficient data points.")
+            print(f"Skipping site '{site}' (index {idx}) due to insufficient data points.")
             continue
-
+        
         try:
-            # 第一次拟合
-            params, _ = curve_fit(func, x_fit, y_fit)
-            y_pred = func(x_fit, *params)
-            deviation = np.abs(y_pred - y_fit)
-            outlier_found = False
-
-            if np.any(deviation > 0.2):
-                outlier_found = True
-                if verbose:
-                    print(f"Site '{site}' (index {idx}) has deviations > 0.2 eV:")
-                for xi, yi, ypi, dev in zip(x_fit, y_fit, y_pred, deviation):
-                    if dev > 0.2:
-                        if verbose:
-                            print(f"  E={xi:.1f}: actual={yi:.3f}, predicted={ypi:.3f}, Δ={dev:.3f}")
-                        GA_matrix.at[idx, f"{xi:.1f}"] = np.nan
-
-                # 重新提取数据
-                y_values_clean = GA_matrix.loc[idx, eads_cols].values.astype(float)
-                valid_mask = ~np.isnan(y_values_clean)
-                x_fit = x_values[valid_mask]
-                y_fit = y_values_clean[valid_mask]
-
-                if len(x_fit) < 3:
-                    if verbose:
-                        print(f"After removing outliers, not enough data for site '{site}' (index {idx})")
-                    continue
-
-                # 第二次拟合
-                params, _ = curve_fit(func, x_fit, y_fit)
-                y_pred = func(x_fit, *params)
-
-            # 填补初始 NaN（如果没有出现 outlier）
-            elif fill_nans_with_fit and np.any(np.isnan(y_values_orig)):
-                full_pred = func(x_values, *params)
-                for j, val in enumerate(y_values_orig):
-                    if np.isnan(val):
-                        if verbose:
-                            print(f"  Filling NaN for site '{site}' at E={x_values[j]:.1f} with predicted value {full_pred[j]:.3f}")
-                        GA_matrix.at[idx, f"{x_values[j]:.1f}"] = full_pred[j]
-
+            # Perform curve fitting.
+            params, covariance = curve_fit(func, x_fit, y_fit)
             a, b, c = params
+
+            # Predicted values for the valid x data.
+            y_pred = func(x_fit, *params)
+            
+            # Calculate R² using scikit-learn's r2_score.
             R2 = r2_score(y_fit, y_pred)
+            
+            # Calculate MAE and RMSE.
             mae = mean_absolute_error(y_fit, y_pred)
             rmse = np.sqrt(mean_squared_error(y_fit, y_pred))
-
+            
+            # Append the results using descriptive names for a and b.
             results_list.append({
                 'site': site,
                 'polarizability': a,
@@ -472,98 +460,15 @@ def get_dipole_polarization(GA_matrix, fill_nans_with_fit=True, verbose=True):
                 # 'MAE': mae,
                 # 'RMSE': rmse
             })
-
         except Exception as e:
-            if verbose:
-                print(f"Error fitting site '{site}' (index {idx}): {e}")
+            print(f"Error fitting curve for site '{site}' (index {idx}): {e}")
             continue
-
+    
+    # Convert the list to a DataFrame and return.
     results_df = pd.DataFrame(results_list)
-    return results_df#, GA_matrix
-
-
-
-# def get_dipole_polarization(GA_matrix):
-#     """
-#     Perform quadratic curve fitting on the Eads columns of the GA_matrix DataFrame for each row.
-#     The x-values are [-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6] and the y-values are taken from the 
-#     corresponding columns: 'Eads_-0.6', 'Eads_-0.4', 'Eads_-0.2', 'Eads_0.0', 'Eads_0.2', 'Eads_0.4', 'Eads_0.6'.
+    print(results_df)
     
-#     For each row, a quadratic function is fitted:
-#          func(x, a, b, c) = -0.5 * a * x**2 - b * x + c
-#     where the parameter 'a' is interpreted as the polarizability and 'b' as the dipole.
-#     In addition, the goodness-of-fit metrics R², MAE, and RMSE are computed using scikit-learn's functions.
-    
-#     Returns:
-#       A DataFrame with the following columns:
-#          'site', 'polarizability', 'dipole', 'c', 'R2', 'MAE', 'RMSE'
-#     """
-    
-#     # Define the quadratic function.
-#     def func(x, a, b, c):
-#         return -0.5 * a * x**2 - b * x + c
-
-#     # Define the x values corresponding to the Eads columns.
-#     x_values = np.array([-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6])
-    
-#     # Determine the correct column for the site label.
-#     site_col = 'Site' if 'Site' in GA_matrix.columns else 'site'
-    
-#     # Define the Eads columns exactly as in GA_matrix.csv.
-#     eads_cols = ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6"]
-    
-#     results_list = []
-    
-#     # Loop through each row of the GA_matrix.
-#     for idx, row in GA_matrix.iterrows():
-#         site = row[site_col]
-#         # Extract y values for the current row.
-#         y_values = row[eads_cols].values.astype(float)
-        
-#         # Remove any NaN values.
-#         valid_mask = ~np.isnan(y_values)
-#         x_fit = x_values[valid_mask]
-#         y_fit = y_values[valid_mask]
-        
-#         # Ensure there are at least 3 data points to perform a quadratic fit.
-#         if len(x_fit) < 3:
-#             print(f"Skipping site '{site}' (index {idx}) due to insufficient data points.")
-#             continue
-        
-#         try:
-#             # Perform curve fitting.
-#             params, covariance = curve_fit(func, x_fit, y_fit)
-#             a, b, c = params
-
-#             # Predicted values for the valid x data.
-#             y_pred = func(x_fit, *params)
-            
-#             # Calculate R² using scikit-learn's r2_score.
-#             R2 = r2_score(y_fit, y_pred)
-            
-#             # Calculate MAE and RMSE.
-#             mae = mean_absolute_error(y_fit, y_pred)
-#             rmse = np.sqrt(mean_squared_error(y_fit, y_pred))
-            
-#             # Append the results using descriptive names for a and b.
-#             results_list.append({
-#                 'site': site,
-#                 'polarizability': a,
-#                 'dipole': b,
-#                 'c': c,
-#                 # 'R2': R2,
-#                 # 'MAE': mae,
-#                 # 'RMSE': rmse
-#             })
-#         except Exception as e:
-#             print(f"Error fitting curve for site '{site}' (index {idx}): {e}")
-#             continue
-    
-#     # Convert the list to a DataFrame and return.
-#     results_df = pd.DataFrame(results_list)
-#     print(results_df)
-    
-#     return results_df
+    return results_df
 
 def update_GA_matrix_with_dipole_polarization(csv_filepath='./GA_matrix.csv'):
     
@@ -1006,439 +911,174 @@ def bootstrap_cross_validation_one_model(models, model_name, EF, X, Y, ratio, n_
 
     return results
 
-
-
 def active_learning_one_model(models, model_name, EF, X, Y, sites, 
                               initial_ratio=0.4, increment=0.05, max_ratio=0.95,
                               error_threshold=0.5, results_dir='results'):
     """
-    Perform an active learning process for a single model, saving both training
-    and testing predictions and metrics each iteration, and finally output a
-    combined CSV of train/test metrics.
-
+    Perform an active learning process for a single model.
+    
+    Initially, a fraction of the data (default 40%) is used for training and the rest for testing.
+    In each iteration, the model is trained on the current training set and evaluated on the testing set.
+    Then, the top outliers (largest absolute errors) are selected from the testing set and added 
+    to the training set until the training set reaches the maximum ratio (default 95%).
+    
+    For each iteration, the following metrics are computed:
+      - Mean Absolute Error (MAE)
+      - Mean Squared Error (MSE)
+      - Root Mean Squared Error (RMSE)
+      - R² score (R2)
+      - Maximum Positive Deviation (MPD): max(predictions - Y_test)
+      - Maximum Negative Deviation (MND): min(predictions - Y_test)
+    
+    Additionally, the function prints out the 'site' labels for test samples with an absolute 
+    prediction error larger than error_threshold (default 0.5 eV).
+    
+    Args:
+        models (dict): Dictionary of models.
+        model_name (str): Name of the model to use.
+        EF: An identifier for saving results.
+        X (np.array): Features dataset.
+        Y (np.array): Target values.
+        sites (np.array or list): Labels corresponding to each sample (e.g., the 'site' column).
+        initial_ratio (float): Initial fraction of data for training (default 0.4).
+        increment (float): Fraction of total data to add each iteration (default 0.05).
+        max_ratio (float): Maximum fraction of data for training (default 0.95).
+        error_threshold (float): Threshold in eV to flag outliers (default 0.5 eV).
+        results_dir (str): Directory where results will be saved.
+    
     Returns:
-        list of dict: metrics per iteration.
+        list of dict: A list of dictionaries containing performance metrics for each iteration.
     """
     total_samples = len(X)
-    idx = np.arange(total_samples)
-    np.random.shuffle(idx)
+    indices = np.arange(total_samples)
+    np.random.shuffle(indices)  # Randomize the data order
 
-    # Initial train/test split
+    # Initial split: use first initial_ratio of samples for training.
     n_train = int(total_samples * initial_ratio)
-    train_idx = idx[:n_train].tolist()
-    test_idx  = idx[n_train:].tolist()
+    train_indices = indices[:n_train].tolist()
+    test_indices = indices[n_train:].tolist()
 
-    os.makedirs(results_dir, exist_ok=True)
     results = []
+    current_ratio = len(train_indices) / total_samples
+
+    # Ensure the results directory exists.
+    os.makedirs(results_dir, exist_ok=True)
     iteration = 0
 
-    while len(train_idx)/total_samples < max_ratio and test_idx:
+    while current_ratio < max_ratio and len(test_indices) > 0:
         iteration += 1
 
-        # Prepare data
-        X_tr, Y_tr = X[train_idx], Y[train_idx]
-        X_te, Y_te = X[test_idx],  Y[test_idx]
+        # Build training and testing sets.
+        X_train = X[train_indices]
+        Y_train = Y[train_indices]
+        X_test = X[test_indices]
+        Y_test = Y[test_indices]
 
-        # Fit
+        # Train the model on the current training set.
         model = models[model_name]
-        model.fit(X_tr, Y_tr)
-
-        # Predictions
-        Y_tr_pred = model.predict(X_tr)
-        Y_te_pred = model.predict(X_te)
-
-        # Save model
-        species = get_species_from_cwd()
+        model.fit(X_train, Y_train)
+        
+        predictions = model.predict(X_test)
+        
+        # Save the model for future prediction 
+        species  = get_species_from_cwd() 
         joblib.dump(model, f'{species}_{model_name}_{EF}.pkl')
 
-        # Compute train metrics
-        train_mae  = mean_absolute_error(Y_tr, Y_tr_pred)
-        train_mse  = mean_squared_error(Y_tr, Y_tr_pred)
-        train_rmse = np.sqrt(train_mse)
-        train_r2   = r2_score(Y_tr, Y_tr_pred)
-        tr_dev     = Y_tr_pred - Y_tr
-        train_mpd  = tr_dev.max()
-        train_mnd  = tr_dev.min()
-
-        # Save train predictions
-        pd.DataFrame({
-            'site':   np.array(sites)[train_idx],
-            'Y_true': Y_tr,
-            'Y_pred': Y_tr_pred
-        }).to_csv(
-            os.path.join(results_dir, f'train_preds_iter{iteration}_{EF}.csv'),
-            index=False
-        )
-
-        # Compute test metrics
-        mae  = mean_absolute_error(Y_te, Y_te_pred)
-        mse  = mean_squared_error(Y_te, Y_te_pred)
+        # Calculate performance metrics.
+        mae = mean_absolute_error(Y_test, predictions)
+        mse = mean_squared_error(Y_test, predictions)
         rmse = np.sqrt(mse)
-        r2   = r2_score(Y_te, Y_te_pred)
-        dev  = Y_te_pred - Y_te
-        mpd  = dev.max()
-        mnd  = dev.min()
+        r2 = r2_score(Y_test, predictions)
 
-        # Save test predictions
-        pd.DataFrame({
-            'site':   np.array(sites)[test_idx],
-            'Y_true': Y_te,
-            'Y_pred': Y_te_pred
-        }).to_csv(
-            os.path.join(results_dir, f'test_preds_iter{iteration}_{EF}.csv'),
-            index=False
-        )
+        # Compute deviations.
+        deviations = predictions - Y_test
+        mpd = np.max(deviations)  # Maximum positive deviation.
+        mnd = np.min(deviations)  # Maximum negative deviation.
 
-        # Log iteration
-        print(f"Iteration {iteration}: train MAE={train_mae:.4f}, test MAE={mae:.4f}")
+        # Record the results for this iteration.
+        iter_result = {
+            'iteration': iteration,
+            'training_ratio': current_ratio,
+            'n_train': len(train_indices),
+            'n_test': len(test_indices),
+            'MAE': mae,
+            'MSE': mse,
+            'RMSE': rmse,
+            'R2': r2,
+            'MPD': mpd,
+            'MND': mnd
+        }
+        results.append(iter_result)
 
-        # Outliers
-        errs = np.abs(Y_te - Y_te_pred)
-        mask = errs > error_threshold
-        if mask.any():
-            outs = np.where(mask)[0]
-            for i in outs[np.argsort(-errs[outs])]:
-                print(f"  Outlier: site={np.array(sites)[test_idx][i]}, err={errs[i]:.3f}")
+        # Print out 'site' labels for test samples with error > error_threshold.
+        errors = np.abs(Y_test - predictions)
+        test_sites = np.array(sites)[test_indices]
+        outlier_mask = errors > error_threshold
+        if np.any(outlier_mask):
+            outlier_indices = np.where(outlier_mask)[0]
+            sorted_indices = outlier_indices[np.argsort(-errors[outlier_indices])]
+            print(f"Iteration {iteration}: Outlier site labels with error > {error_threshold} eV:")
+            for idx in sorted_indices:
+                print(f"  Site: {test_sites[idx]}, Error: {errors[idx]:.3f} eV")
         else:
-            print("  No outliers above threshold.")
+            print(f"Iteration {iteration}: No outliers with error > {error_threshold} eV.")
 
-        # Record metrics
-        results.append({
-            'iteration':        iteration,
-            'training_ratio':   len(train_idx)/total_samples,
-            'n_train':          len(train_idx),
-            'n_test':           len(test_idx),
+        # Determine the number of samples to add.
+        n_to_add = int(total_samples * increment)
+        # Safeguard: ensure at least one sample is added per iteration.
+        if n_to_add < 1:
+            n_to_add = 1
+        if n_to_add > len(test_indices):
+            n_to_add = len(test_indices)
 
-            'train_MAE':        train_mae,
-            'train_MSE':        train_mse,
-            'train_RMSE':       train_rmse,
-            'train_R2':         train_r2,
-            'train_MPD':        train_mpd,
-            'train_MND':        train_mnd,
+        # Select the top n_to_add samples (by error ranking).
+        sorted_error_indices = np.argsort(-errors)  # Largest errors first.
+        selected_indices = [test_indices[i] for i in sorted_error_indices[:n_to_add]]
 
-            'test_MAE':         mae,
-            'test_MSE':         mse,
-            'test_RMSE':        rmse,
-            'test_R2':          r2,
-            'test_MPD':         mpd,
-            'test_MND':         mnd,
-        })
+        # Move selected indices from testing to training.
+        train_indices.extend(selected_indices)
+        test_indices = [idx for idx in test_indices if idx not in selected_indices]
 
-        # Active learning: add top-error tests to train
-        n_add = max(1, int(total_samples * increment))
-        n_add = min(n_add, len(test_idx))
-        top_idxs = np.argsort(-errs)[:n_add]
-        selected = [test_idx[i] for i in top_idxs]
-        train_idx.extend(selected)
-        test_idx  = [i for i in test_idx if i not in selected]
+        # Update current training ratio.
+        current_ratio = len(train_indices) / total_samples
 
-    # After loop: save combined training+testing metrics
-    df = pd.DataFrame(results)
-    # Order columns
-    base_cols = ['iteration','training_ratio','n_train','n_test']
-    metric_cols = ['MAE','MSE','RMSE','R2','MPD','MND']
-    cols = base_cols + [f'train_{m}' for m in metric_cols] + [f'test_{m}' for m in metric_cols]
-
-    out_file = os.path.join(results_dir, f'active_learning_metrics_{EF}.csv')
-    df[cols].to_csv(out_file, index=False)
-    print(f"✅ Saved combined metrics to {out_file}")
-
+    # Save overall results to a single CSV file.
+    overall_csv_file = os.path.join(results_dir, f'active_learning_overall_results_{EF}.csv')
+    results_df = pd.DataFrame(results)
+    results_df.to_csv(overall_csv_file, index=False)
+    print(f"Saved overall active learning results to {overall_csv_file}")
+    
     return results
 
-def plot_active_learning_from_csv(csv_filepath, EF, results_dir='results'):
+
+def plot_active_learning_from_csv(csv_filepath,EF):
     """
-    Read the combined active learning results CSV and plot both training and testing
-    performance metrics vs. training ratio.
-
-    The CSV is expected to have columns:
-      'training_ratio',
-      'train_MAE','train_MSE','train_RMSE','train_R2','train_MPD','train_MND',
-      'test_MAE', 'test_MSE', 'test_RMSE', 'test_R2', 'test_MPD', 'test_MND'
-
+    Read the active learning results from a CSV file and plot performance metrics vs. training ratio.
+    
+    The CSV file is expected to have columns such as:
+    'training_ratio', 'MAE', 'MSE', 'RMSE', 'R2', 'MPD', 'MND'
+    
     Args:
-        csv_filepath (str): Path to the combined CSV file.
-        EF (str or float): The EF value for labeling the plot.
-        results_dir (str): Directory where the plot will be saved.
+        csv_filepath (str): The path to the CSV file containing the active learning results.
     """
     df = pd.read_csv(csv_filepath)
     df.sort_values('training_ratio', inplace=True)
-
     plt.figure(figsize=(10, 6))
-    # Plot MAE
-    plt.plot(df['training_ratio'], df['train_MAE'],  marker='o', linestyle='--', color = 'tab:blue', label='Train MAE')
-    plt.plot(df['training_ratio'], df['test_MAE'],   marker='o', linestyle='-', color = 'tab:red', label='Test MAE')
-    # Plot RMSE
-    plt.plot(df['training_ratio'], df['train_RMSE'], marker='^', linestyle='--', color = 'tab:blue', label='Train RMSE')
-    plt.plot(df['training_ratio'], df['test_RMSE'],  marker='^',linestyle='-',  color = 'tab:red', label='Test RMSE')
-    # # Plot MPD
-    # plt.plot(df['training_ratio'], df['train_MPD'],  marker='D', label='Train MPD')
-    # plt.plot(df['training_ratio'], df['test_MPD'],   marker='d', label='Test MPD')
-    # # Plot MND
-    # plt.plot(df['training_ratio'], df['train_MND'],  marker='x', label='Train MND')
-    # plt.plot(df['training_ratio'], df['test_MND'],   marker='*', label='Test MND')
-
-    plt.xlabel('Training Ratio', fontsize=16)
-    plt.ylabel('Metric Value', fontsize=16)
-    plt.title(f'Active Learning Metrics vs. Training Ratio (EF = {EF})', fontsize=18)
-    plt.legend(fontsize=12, framealpha=0.8)
+    plt.plot(df['training_ratio'], df['MAE'], marker='o', label='MAE')
+    # plt.plot(df['training_ratio'], df['MSE'], marker='s', label='MSE')
+    plt.plot(df['training_ratio'], df['RMSE'], marker='^', label='RMSE')
+    # plt.plot(df['training_ratio'], df['R2'], marker='v', label='R2')
+    plt.plot(df['training_ratio'], df['MPD'], marker='D', label='MPD')
+    plt.plot(df['training_ratio'], df['MND'], marker='x', label='MND')
+    plt.tick_params(axis='both', labelsize=18)
+    plt.xlabel('Training Ratio', fontsize = 20)
+    plt.ylabel('Metric Value', fontsize = 20)
+    plt.title(f'Active Learning Performance Metrics vs. Training Ratio at {EF} eV/A')
+    plt.legend(framealpha=0, fontsize=18)
+    plt.tight_layout()
     plt.grid(True)
-    plt.tight_layout()
-
-    # Ensure results_dir exists
-    os.makedirs(results_dir, exist_ok=True)
-    out_png = os.path.join(results_dir, f'active_learning_metrics_{EF}.png')
-    plt.savefig(out_png, dpi=300)
+    plt.savefig(f'results/mae_{EF}.png', dpi=300)
     plt.close()
-    print(f"✅ Plot saved to {out_png}")
-
-
-    
-def plot_active_predicting_from_csv(predict_csv_dir, ratio, EF):
-    """
-    Read training and testing prediction CSVs for a given iteration (ratio) and EF,
-    plot true vs. predicted scatter for both sets, annotate with MAEs calculated
-    directly from the data, and save the figure.
-
-    Args:
-        predict_csv_dir (str): Directory containing the CSVs.
-        ratio (int or str): The iteration number (used in the filename).
-        EF (float or str): The EF value (used in the filename and title).
-    """
-    # Paths to prediction CSVs
-    train_fp = os.path.join(predict_csv_dir, f'train_preds_iter{ratio}_{EF}.csv')
-    test_fp  = os.path.join(predict_csv_dir, f'test_preds_iter{ratio}_{EF}.csv')
-
-    # Read data
-    df_train = pd.read_csv(train_fp)
-    df_test  = pd.read_csv(test_fp)
-
-    # Compute MAEs directly
-    mae_train = mean_absolute_error(df_train['Y_true'], df_train['Y_pred'])
-    mae_test  = mean_absolute_error(df_test['Y_true'],  df_test['Y_pred'])
-
-    # Create scatter plot
-    plt.figure(figsize=(6,6))
-    plt.scatter(df_train['Y_true'], df_train['Y_pred'],
-                color='tab:blue', label=f'Train (MAE = {mae_train:.3f} eV)', alpha=0.6, linestyle='--')
-    plt.scatter(df_test['Y_true'], df_test['Y_pred'],
-                color='tab:red',  label=f'Test  (MAE = {mae_test:.3f} eV)',  alpha=0.6)
-
-    # y = x reference line
-    all_vals = pd.concat([df_train[['Y_true','Y_pred']],
-                          df_test [['Y_true','Y_pred']]]).values.flatten()
-    vmin, vmax = all_vals.min(), all_vals.max()
-    plt.plot([vmin, vmax], [vmin, vmax], 'k--', lw=1)
-
-    # # Annotate MAE values
-    # text_x = vmin + 0.85*(vmax-vmin)
-    # text_y = vmax - 0.85*(vmax-vmin)
-    # plt.text(text_x, text_y,
-    #          f"MAE_train: {mae_train:.3f} eV\nMAE_test:  {mae_test:.3f} eV",
-    #          fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
-
-    # Labels and title
-    plt.xlabel('True Eads',  fontsize=14)
-    plt.ylabel('Predicted Eads', fontsize=14)
-    plt.title(f'Iteration {ratio} Predictions (EF = {EF})', fontsize=16)
-    plt.legend(framealpha=0.8, fontsize=12)
-    plt.tight_layout()
-
-    # Save figure
-    out_png = os.path.join(predict_csv_dir, f'preds_iter{ratio}_{EF}.png')
-    plt.savefig(out_png, dpi=300)
-    plt.close()
-    print(f"✅ Saved scatter plot with MAEs to {out_png}")
-    
-    
-# def active_learning_one_model(models, model_name, EF, X, Y, sites, 
-#                               initial_ratio=0.4, increment=0.05, max_ratio=0.95,
-#                               error_threshold=0.5, results_dir='results'):
-#     """
-#     Perform an active learning process for a single model.
-    
-#     Initially, a fraction of the data (default 40%) is used for training and the rest for testing.
-#     In each iteration, the model is trained on the current training set and evaluated on the testing set.
-#     Then, the top outliers (largest absolute errors) are selected from the testing set and added 
-#     to the training set until the training set reaches the maximum ratio (default 95%).
-    
-#     For each iteration, the following metrics are computed:
-#       - Mean Absolute Error (MAE)
-#       - Mean Squared Error (MSE)
-#       - Root Mean Squared Error (RMSE)
-#       - R² score (R2)
-#       - Maximum Positive Deviation (MPD): max(predictions - Y_test)
-#       - Maximum Negative Deviation (MND): min(predictions - Y_test)
-    
-#     Additionally, the function prints out the 'site' labels for test samples with an absolute 
-#     prediction error larger than error_threshold (default 0.5 eV).
-    
-#     Args:
-#         models (dict): Dictionary of models.
-#         model_name (str): Name of the model to use.
-#         EF: An identifier for saving results.
-#         X (np.array): Features dataset.
-#         Y (np.array): Target values.
-#         sites (np.array or list): Labels corresponding to each sample (e.g., the 'site' column).
-#         initial_ratio (float): Initial fraction of data for training (default 0.4).
-#         increment (float): Fraction of total data to add each iteration (default 0.05).
-#         max_ratio (float): Maximum fraction of data for training (default 0.95).
-#         error_threshold (float): Threshold in eV to flag outliers (default 0.5 eV).
-#         results_dir (str): Directory where results will be saved.
-    
-#     Returns:
-#         list of dict: A list of dictionaries containing performance metrics for each iteration.
-#     """
-#     total_samples = len(X)
-#     indices = np.arange(total_samples)
-#     np.random.shuffle(indices)  # Randomize the data order
-
-#     # Initial split: use first initial_ratio of samples for training.
-#     n_train = int(total_samples * initial_ratio)
-#     train_indices = indices[:n_train].tolist()
-#     test_indices = indices[n_train:].tolist()
-
-#     results = []
-#     iteration = 0
-#     current_ratio = len(train_indices) / total_samples
-
-#     # Ensure the results directory exists.
-#     os.makedirs(results_dir, exist_ok=True)
-
-#     while current_ratio < max_ratio and len(test_indices) > 0:
-#         iteration += 1
-
-#         # Build training and testing sets.
-#         X_train = X[train_indices]
-#         Y_train = Y[train_indices]
-#         X_test = X[test_indices]
-#         Y_test = Y[test_indices]
-
-#         # Train the model on the current training set.
-#         model = models[model_name]
-#         model.fit(X_train, Y_train)
-        
-#         # Predictions
-#         Y_train_pred = model.predict(X_train)
-#         Y_test_pred  = model.predict(X_test)
-                
-#         # Save the model for future prediction 
-#         species  = get_species_from_cwd() 
-#         joblib.dump(model, f'{species}_{model_name}_{EF}.pkl')
-
-
-#         # --- TRAIN METRICS & SAVE PREDICTIONS ---
-#         train_mae = mean_absolute_error(Y_train, Y_train_pred)
-#         df_train = pd.DataFrame({
-#             'site': np.array(sites)[train_indices],
-#             'Y_true': Y_train,
-#             'Y_pred': Y_train_pred
-#         })
-#         train_file = os.path.join(results_dir, f'train_preds_iter{iteration}_{EF}.csv')
-#         df_train.to_csv(train_file, index=False)
-#         # ---  METRICS & SAVE PREDICTIONS ---
-#         df_test = pd.DataFrame({
-#             'site': np.array(sites)[test_indices],
-#             'Y_true': Y_test,
-#             'Y_pred': Y_test_pred
-#         })
-#         test_file = os.path.join(results_dir, f'test_preds_iter{iteration}_{EF}.csv')
-#         df_test.to_csv(test_file, index=False)
-        
-#         # Calculate performance metrics.
-#         mae = mean_absolute_error(Y_test, Y_test_pred)
-#         mse = mean_squared_error(Y_test, Y_test_pred)
-#         rmse = np.sqrt(mse)
-#         r2 = r2_score(Y_test, Y_test_pred)
-
-#         # Compute deviations.
-#         deviations = Y_test_pred - Y_test
-#         mpd = np.max(deviations)  # Maximum positive deviation.
-#         mnd = np.min(deviations)  # Maximum negative deviation.
-
-#         # Record the results for this iteration.
-#         iter_result = {
-#             'iteration': iteration,
-#             'training_ratio': current_ratio,
-#             'n_train': len(train_indices),
-#             'n_test': len(test_indices),
-#             'MAE': mae,
-#             'MSE': mse,
-#             'RMSE': rmse,
-#             'R2': r2,
-#             'MPD': mpd,
-#             'MND': mnd
-#         }
-#         results.append(iter_result)
-
-#         # Print out 'site' labels for test samples with error > error_threshold.
-#         errors = np.abs(Y_test - Y_test_pred)
-#         test_sites = np.array(sites)[test_indices]
-#         outlier_mask = errors > error_threshold
-#         if np.any(outlier_mask):
-#             outlier_indices = np.where(outlier_mask)[0]
-#             sorted_indices = outlier_indices[np.argsort(-errors[outlier_indices])]
-#             print(f"Iteration {iteration}: Outlier site labels with error > {error_threshold} eV:")
-#             for idx in sorted_indices:
-#                 print(f"  Site: {test_sites[idx]}, Error: {errors[idx]:.3f} eV")
-#         else:
-#             print(f"Iteration {iteration}: No outliers with error > {error_threshold} eV.")
-
-#         # Determine the number of samples to add.
-#         n_to_add = int(total_samples * increment)
-#         # Safeguard: ensure at least one sample is added per iteration.
-#         if n_to_add < 1:
-#             n_to_add = 1
-#         if n_to_add > len(test_indices):
-#             n_to_add = len(test_indices)
-
-#         # Select the top n_to_add samples (by error ranking).
-#         sorted_error_indices = np.argsort(-errors)  # Largest errors first.
-#         selected_indices = [test_indices[i] for i in sorted_error_indices[:n_to_add]]
-
-#         # Move selected indices from testing to training.
-#         train_indices.extend(selected_indices)
-#         test_indices = [idx for idx in test_indices if idx not in selected_indices]
-
-#         # Update current training ratio.
-#         current_ratio = len(train_indices) / total_samples
-
-#     # Save overall results to a single CSV file.
-#     overall_csv_file = os.path.join(results_dir, f'active_learning_overall_results_{EF}.csv')
-#     results_df = pd.DataFrame(results)
-#     results_df.to_csv(overall_csv_file, index=False)
-#     print(f"Saved overall active learning results to {overall_csv_file}")
-    
-#     return results
-
-
-# def plot_active_learning_from_csv(csv_filepath,EF):
-#     """
-#     Read the active learning results from a CSV file and plot performance metrics vs. training ratio.
-    
-#     The CSV file is expected to have columns such as:
-#     'training_ratio', 'MAE', 'MSE', 'RMSE', 'R2', 'MPD', 'MND'
-    
-#     Args:
-#         csv_filepath (str): The path to the CSV file containing the active learning results.
-#     """
-#     df = pd.read_csv(csv_filepath)
-#     df.sort_values('training_ratio', inplace=True)
-#     plt.figure(figsize=(10, 6))
-#     plt.plot(df['training_ratio'], df['MAE'], marker='o', label='MAE')
-#     # plt.plot(df['training_ratio'], df['MSE'], marker='s', label='MSE')
-#     plt.plot(df['training_ratio'], df['RMSE'], marker='^', label='RMSE')
-#     # plt.plot(df['training_ratio'], df['R2'], marker='v', label='R2')
-#     plt.plot(df['training_ratio'], df['MPD'], marker='D', label='MPD')
-#     plt.plot(df['training_ratio'], df['MND'], marker='x', label='MND')
-#     plt.tick_params(axis='both', labelsize=18)
-#     plt.xlabel('Training Ratio', fontsize = 20)
-#     plt.ylabel('Metric Value', fontsize = 20)
-#     plt.title(f'Active Learning Performance Metrics vs. Training Ratio at {EF} eV/A')
-#     plt.legend(framealpha=0, fontsize=18)
-#     plt.tight_layout()
-#     plt.grid(True)
-#     plt.savefig(f'results/mae_{EF}.png', dpi=300)
-#     plt.close()
     
 def run_or_plot_active_learning(models, model_name, EF, X, Y, sites,
                                 initial_ratio=0.4, increment=0.05, max_ratio=0.95,
@@ -1460,7 +1100,7 @@ def run_or_plot_active_learning(models, model_name, EF, X, Y, sites,
         max_ratio (float): Maximum fraction of data for training.
         results_dir (str): Directory where results will be saved.
     """
-    overall_csv_file = os.path.join(results_dir, f'active_learning_metrics_{EF}.csv')
+    overall_csv_file = os.path.join(results_dir, f'active_learning_overall_results_{EF}.csv')
     
     if os.path.exists(overall_csv_file):
         print(f"CSV file found at {overall_csv_file}. Reading and plotting results...")
@@ -1473,8 +1113,6 @@ def run_or_plot_active_learning(models, model_name, EF, X, Y, sites,
         print("Active learning process completed. Plotting results...")
         plot_active_learning_from_csv(overall_csv_file, EF)
 
-    # plot_active_predicting_from_csv('results', EF)
-    plot_active_predicting_from_csv('results', 4, EF)
 ### GA Applilcations
     
 def find_all_rhombuses(atoms, connections, surface_indices, bond_length_threshold):
@@ -3301,7 +2939,8 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
     wb = load_workbook(template_path)
     dft_sheet = wb["species"]
     
-    # 3. Replace data in the sheet: get keys from column A, replace potential energy in column L"
+    # 3. Replace data in the sheet: 
+    "get keys from column A, replace potential energy in column L"
     print(f"✅ Fill the Excel Template File")
     
     missing_keys = []
@@ -3315,9 +2954,12 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
                 # print(f"✅ Replace: {key} -> {replacement_dict[key]:.6f}")
         else:
             missing_keys.append(key)
-            
-    for key in missing_keys:
-        print(f"  - {key}")
+    
+    # if verbose and missing_keys:
+    #     print("⚠️ Some keys were not found in replacement_dict, so they were not replaced. Check!")
+    #     # print("⚠️ The following keys were not found in replacement_dict, so they were not replaced:")
+    #     # for key in missing_keys:
+    #     #     print(f"  - {key}")
     
     # 4. Save the updated Excel file into the inputs folder
     output_path = os.path.join(inputs_folder, 'NH3_Input_Data.xlsx')
@@ -3361,7 +3003,7 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
     
     # 6.3 In outputs folder, run "python3 NH3_v2.py 600 > mkm.out"
     print("✅ Running MKM...")
-    T = 400   # Celcius
+    T = 600   # Celcius
     run_mkm(main_folder, T)
     # subprocess.run("python3 NH3_v2.py 600 > mkm.out", cwd=outputs_folder, shell=True, check=True)
     
