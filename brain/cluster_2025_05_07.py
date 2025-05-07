@@ -367,7 +367,28 @@ def get_CN_GA(path, mult=0.9):
             f.write(f"{group}\n")
 
 
+def load_ga_data(cluster_path):
+    """
+    Loads the GA dictionary and the groups list from files.
 
+    Parameters:
+        load_path (str): The directory where the files are stored.
+                         Files are expected to be named 'GA_dict.txt' and 'groups.txt'.
+    
+    Returns:
+        tuple: A tuple containing the GA dictionary and the groups list.
+    """
+    # Load GA_dict from JSON file
+    ga_file = os.path.join(cluster_path, 'GA_dict.txt')
+    with open(ga_file, 'r') as f:
+        GA_dict = json.load(f)
+    
+    # Load groups from the text file
+    groups_file = os.path.join(cluster_path, 'groups.txt')
+    with open(groups_file, 'r') as f:
+        groups = [line.strip() for line in f if line.strip()]
+    
+    return GA_dict, groups
 
 def func(x, a, b, c):
     return -0.5 * a * x**2 - b * x + c
@@ -378,7 +399,7 @@ def get_dipole_polarization(GA_matrix, fill_nans_with_fit=True, verbose=True):
         return -0.5 * a * x**2 - b * x + c
 
     x_values = np.array([-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6])
-    eads_cols = ['E_ads_' + i for i in ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6"] ]
+    eads_cols = ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6"]
     site_col = 'Site' if 'Site' in GA_matrix.columns else 'site'
 
     results_list = []
@@ -462,129 +483,87 @@ def get_dipole_polarization(GA_matrix, fill_nans_with_fit=True, verbose=True):
 
 
 
-
-def load_ga_data(cluster_path):
-    """
-    Loads the GA dictionary and the groups list from files.
-
-    Parameters:
-        load_path (str): The directory where the files are stored.
-                         Files are expected to be named 'GA_dict.txt' and 'groups.txt'.
+# def get_dipole_polarization(GA_matrix):
+#     """
+#     Perform quadratic curve fitting on the Eads columns of the GA_matrix DataFrame for each row.
+#     The x-values are [-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6] and the y-values are taken from the 
+#     corresponding columns: 'Eads_-0.6', 'Eads_-0.4', 'Eads_-0.2', 'Eads_0.0', 'Eads_0.2', 'Eads_0.4', 'Eads_0.6'.
     
-    Returns:
-        tuple: A tuple containing the GA dictionary and the groups list.
-    """
-    # Load GA_dict from JSON file
-    ga_file = os.path.join(cluster_path, 'GA_dict.txt')
-    with open(ga_file, 'r') as f:
-        GA_dict = json.load(f)
+#     For each row, a quadratic function is fitted:
+#          func(x, a, b, c) = -0.5 * a * x**2 - b * x + c
+#     where the parameter 'a' is interpreted as the polarizability and 'b' as the dipole.
+#     In addition, the goodness-of-fit metrics R², MAE, and RMSE are computed using scikit-learn's functions.
     
-    # Load groups from the text file
-    groups_file = os.path.join(cluster_path, 'groups.txt')
-    with open(groups_file, 'r') as f:
-        groups = [line.strip() for line in f if line.strip()]
+#     Returns:
+#       A DataFrame with the following columns:
+#          'site', 'polarizability', 'dipole', 'c', 'R2', 'MAE', 'RMSE'
+#     """
     
-    return GA_dict, groups
+#     # Define the quadratic function.
+#     def func(x, a, b, c):
+#         return -0.5 * a * x**2 - b * x + c
 
-
-def get_full_GA_matrix(cluster_path):
-    """
-    Generate the GA (Group Additivity) matrix for all the surface sites
-    """
-    GA_dict, groups = load_ga_data(cluster_path)
-    # Prepare header for the GA matrix DataFrame
-    header = ['site'] + groups
-    GA_matrix = []
-
-    for key,values in GA_dict.items():
-        groups_geo = values
-        row = [key]
-        # Create the GA matrix row: first column is the site label, then counts for each group
-        for group in groups:
-            count = groups_geo.count(group)
-            row.append(count)
-        GA_matrix.append(row)
-
-    # Create a DataFrame from the GA matrix
-    df_GA = pd.DataFrame(GA_matrix, columns=header)
-
+#     # Define the x values corresponding to the Eads columns.
+#     x_values = np.array([-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6])
     
-    # Save the GA matrix to CSV
-    output_csv = cluster_path + "/GA_matrix_full.csv"
+#     # Determine the correct column for the site label.
+#     site_col = 'Site' if 'Site' in GA_matrix.columns else 'site'
     
-    df_GA.to_csv(output_csv, index=False)
-    print("GA matrix saved as", output_csv)
+#     # Define the Eads columns exactly as in GA_matrix.csv.
+#     eads_cols = ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6"]
     
-    return df_GA
-
-
-def generate_GA_matrix_species(cluster_path, list_EF):
+#     results_list = []
     
-    ga_matrix_file = os.path.join(cluster_path, 'GA_matrix_full.csv')
-    print("Reading from:", ga_matrix_file)
-
-    with open(ga_matrix_file, 'r') as f:
-        first_line = f.readline()
-        print("Actual header line in file:")
-        print(first_line.strip())
+#     # Loop through each row of the GA_matrix.
+#     for idx, row in GA_matrix.iterrows():
+#         site = row[site_col]
+#         # Extract y values for the current row.
+#         y_values = row[eads_cols].values.astype(float)
         
-    # GA_matrix_full = get_full_GA_matrix(cluster_path)
-    GA_matrix_full = pd.read_csv(ga_matrix_file)
-    print("Original GA_matrix_full columns from slab folder:")
-    print(GA_matrix_full.columns.tolist())
-    
-    sites = GA_matrix_full['site'].tolist()
-    GA_matrix_species = GA_matrix_full.copy()
-    # Ensure results directory exists
-    if not os.path.exists('results'):
-        os.makedirs('results')
-    
-    data_file = './sorted_data.csv'
-    df_data = pd.read_csv(data_file)
+#         # Remove any NaN values.
+#         valid_mask = ~np.isnan(y_values)
+#         x_fit = x_values[valid_mask]
+#         y_fit = y_values[valid_mask]
+        
+#         # Ensure there are at least 3 data points to perform a quadratic fit.
+#         if len(x_fit) < 3:
+#             print(f"Skipping site '{site}' (index {idx}) due to insufficient data points.")
+#             continue
+        
+#         try:
+#             # Perform curve fitting.
+#             params, covariance = curve_fit(func, x_fit, y_fit)
+#             a, b, c = params
 
-    species = get_species_from_cwd()  
-
-    for ef_val in list_EF:
-        eads_ef = []
-        for site in sites:         
-        # Retrieve the slab energy from df where Species equals 'slab'
-            try:
-                slab_energy = df_data.loc[df_data['Species'] == 'slab', ef_val].values[0]
-                # print(slab_energy)
-            except KeyError:
-                raise KeyError(f"EF value '{ef_val}' not found in the data.")
+#             # Predicted values for the valid x data.
+#             y_pred = func(x_fit, *params)
+            
+#             # Calculate R² using scikit-learn's r2_score.
+#             R2 = r2_score(y_fit, y_pred)
+            
+#             # Calculate MAE and RMSE.
+#             mae = mean_absolute_error(y_fit, y_pred)
+#             rmse = np.sqrt(mean_squared_error(y_fit, y_pred))
+            
+#             # Append the results using descriptive names for a and b.
+#             results_list.append({
+#                 'site': site,
+#                 'polarizability': a,
+#                 'dipole': b,
+#                 'c': c,
+#                 # 'R2': R2,
+#                 # 'MAE': mae,
+#                 # 'RMSE': rmse
+#             })
+#         except Exception as e:
+#             print(f"Error fitting curve for site '{site}' (index {idx}): {e}")
+#             continue
     
-            # Compute the adsorption energy: subtract slab energy and a gas-phase correction
+#     # Convert the list to a DataFrame and return.
+#     results_df = pd.DataFrame(results_list)
+#     print(results_df)
     
-            if species in ['H', 'N', 'O']:
-                gas_species = species + '2'
-                E_gas = float(gas_dict[gas_species]) / 2
-            else:
-                gas_species = species
-                E_gas = float(gas_dict[gas_species])
-                
-            # print('Eslab', slab_energy)
-            try:
-                ef_value = df_data.loc[df_data['site'] == site, ef_val].values[0]
-                eads_value = ef_value - slab_energy - E_gas
-            except :
-                eads_value = float('nan') 
-            eads_ef.append(eads_value)
-            # Add the computed energy column to the GA matrix DataFrame.
-            # (Assumes the row order of df and df_GA is the same.)
-        GA_matrix_species[f'E_ads_{ef_val}'] = eads_ef
-    # print("Original GA_matrix_full columns:")
-    # print(GA_matrix_full.columns.tolist())
-    
-    # print("\nModified GA_matrix_species columns:")
-    # print(GA_matrix_species.columns.tolist())
-    #     # Save the GA matrix to CSV
-    output_csv = "./GA_matrix.csv"
-    
-    GA_matrix_species.to_csv(output_csv, index=False)
-    print("GA matrix of the species is saved as", output_csv)
-    
-    return GA_matrix_species
+#     return results_df
 
 def update_GA_matrix_with_dipole_polarization(csv_filepath='./GA_matrix.csv'):
     
@@ -620,6 +599,283 @@ def update_GA_matrix_with_dipole_polarization(csv_filepath='./GA_matrix.csv'):
     
     return updated_df
 
+def get_full_GA_matrix(cluster_path):
+    """
+    Generate the GA (Group Additivity) matrix for all the surface sites
+    """
+
+    # Load or generate GA data
+    try: 
+        GA_dict, groups = load_ga_data(cluster_path)
+    except Exception as e:
+        print("Error loading GA data:", e)
+        get_CN_GA(cluster_path, mult=0.9)
+        GA_dict, groups = load_ga_data(cluster_path)
+    
+    # Prepare header for the GA matrix DataFrame
+    header = ['site'] + groups
+    GA_matrix = []
+
+    for key,values in GA_dict.items():
+        groups_geo = values
+        row = [key]
+        # Create the GA matrix row: first column is the site label, then counts for each group
+        for group in groups:
+            count = groups_geo.count(group)
+            row.append(count)
+        GA_matrix.append(row)
+
+    # Create a DataFrame from the GA matrix
+    df_GA = pd.DataFrame(GA_matrix, columns=header)
+
+    
+    # Save the GA matrix to CSV
+    output_csv = "GA_matrix_full.csv"
+    
+    df_GA.to_csv(output_csv, index=False)
+    print("GA matrix saved as", output_csv)
+    
+    return df_GA
+
+
+def generate_GA_matrix_new(cluster_path, list_EF):
+    
+    GA_matrix_full = get_full_GA_matrix(cluster_path)
+    sites = GA_matrix_full['site'].tolist()
+    
+    # Ensure results directory exists
+    if not os.path.exists('results'):
+        os.makedirs('results')
+    
+    data_file = './sorted_data.csv'
+    df_data = pd.read_csv(data_file)
+
+    species = get_species_from_cwd()  
+
+    for ef_val in list_EF:
+        eads_ef = []
+        for site in sites:         
+        # Retrieve the slab energy from df where Species equals 'slab'
+            try:
+                slab_energy = df_data.loc[df_data['Species'] == 'slab', ef_val].values[0]
+                print(slab_energy)
+            except KeyError:
+                raise KeyError(f"EF value '{ef_val}' not found in the data.")
+    
+            # Compute the adsorption energy: subtract slab energy and a gas-phase correction
+    
+            if species in ['H', 'N', 'O']:
+                gas_species = species + '2'
+                E_gas = float(gas_dict[gas_species]) / 2
+            else:
+                gas_species = species
+                E_gas = float(gas_dict[gas_species])
+                
+            # print('Eslab', slab_energy)
+            try:
+                ef_value = df_data.loc[df_data['site'] == site, ef_val].values[0]
+                eads_value = ef_value - slab_energy - E_gas
+            except :
+                eads_value = float('nan') 
+            eads_ef.append(eads_value)
+            # Add the computed energy column to the GA matrix DataFrame.
+            # (Assumes the row order of df and df_GA is the same.)
+        GA_matrix_full[ef_val] = eads_ef
+    
+    # Save the GA matrix to CSV
+    output_csv = "GA_matrix.csv"
+    
+    GA_matrix_full.to_csv(output_csv, index=False)
+    print("GA matrix saved as", output_csv)
+    
+    return GA_matrix_full
+
+
+def generate_GA_matrix(cluster_path, list_EF): 
+    """
+    Generate the GA (Group Additivity) matrix and compute adsorption energies.
+    
+    This function reads a sorted data CSV file, computes a GA matrix based on adsorption sites 
+    and group additivity data, and then computes adsorption energies for each specified EF value.
+    Rows corresponding to 'slab' or undefined ('NA') sites are dropped from the final matrix.
+    
+    Parameters:
+        cluster_path (str): Path to the cluster data.
+        list_EF (list of str): List of EF values (as strings) for which adsorption energies 
+                               will be computed.
+    
+    Returns:
+        df_GA (pandas.DataFrame): DataFrame containing the GA matrix and the computed adsorption energies.
+    """
+    # Ensure results directory exists
+    if not os.path.exists('results'):
+        os.makedirs('results')
+    
+    data_file = './sorted_data.csv'
+    df = pd.read_csv(data_file)
+
+    list_path = df['path'].tolist()
+    # Set the index to 'Species' for later energy retrieval
+    df.set_index('Species', inplace=True)
+    
+    # Load or generate GA data
+    try: 
+        GA_dict, groups = load_ga_data(cluster_path)
+    except Exception as e:
+        print("Error loading GA data:", e)
+        get_CN_GA(cluster_path, mult=0.9)
+        GA_dict, groups = load_ga_data(cluster_path)
+    
+    # Prepare header for the GA matrix DataFrame
+    header = ['site'] + groups
+    GA_matrix = []
+    # Loop over each path to build the GA matrix
+    for path in list_path: 
+        poscar_file = os.path.join(path, 'POSCAR')
+        try:
+            atoms = read(poscar_file)
+        except Exception as e:
+            print(f"Error reading POSCAR in path {path}: {e}")
+            continue
+        
+        full_path = os.path.abspath(path)        
+        try:
+            # Determine the adsorption site type based on the file path
+            if 'N2_ads' in full_path:
+                ru_site_str = classify_N2_adsorption(atoms)[-1]
+            elif any(keyword in full_path for keyword in ['N_ads', 'NH_ads', 'NH2_ads', 'NH3_ads']):    
+                ru_site_str = classify_single_atom_adsorption(atoms, 'N', 2.4)
+            elif 'H_ads' in full_path:
+                ru_site_str = classify_single_atom_adsorption(atoms, 'H', 2.2)
+            else:
+                ru_site_str = 'NA'
+            # Get GA groups associated with the adsorption site; default to empty list if not found.
+            groups_geo = GA_dict.get(ru_site_str, [])
+        except Exception as e:
+            print(f"{path}: Error classifying adsorption site for {full_path}: {e}")
+            ru_site_str = 'NA'
+            groups_geo = ['NA']
+    
+        # Create the GA matrix row: first column is the site label, then counts for each group
+        row = [ru_site_str]
+        for group in groups:
+            count = groups_geo.count(group)
+            row.append(count)
+        GA_matrix.append(row)
+
+    # Create a DataFrame from the GA matrix
+    df_GA = pd.DataFrame(GA_matrix, columns=header)
+    
+    # Reset the original dataframe index to retrieve energy data (Species becomes a column)
+    df = df.reset_index()
+    # Retrieve the species type (e.g., 'H', 'N', 'O', etc.) from the current working directory or elsewhere
+    species = get_species_from_cwd()  
+
+    # For each EF value, compute the adsorption energy and add it as a column
+    for ef_val in list_EF: 
+        # col_name = 'Eads_' + ef_val
+        col_name = ef_val
+        # Retrieve the slab energy from df where Species equals 'slab'
+        slab_rows = df[df['Species'] == 'slab']
+        if slab_rows.empty:
+            raise KeyError("'slab' entry is missing in the Species column.")
+        try:
+            slab_energy = slab_rows.iloc[0][ef_val]
+            print(slab_energy)
+        except KeyError:
+            raise KeyError(f"EF value '{ef_val}' not found in the data.")
+    
+        # Compute the adsorption energy: subtract slab energy and a gas-phase correction
+
+        if species in ['H', 'N', 'O']:
+            gas_species = species + '2'
+            E_gas = float(gas_dict[gas_species]) / 2
+        else:
+            gas_species = species
+            E_gas = float(gas_dict[gas_species])
+            
+        # print('Eslab', slab_energy)
+        try:
+            df[col_name] = df[ef_val] - slab_energy - E_gas
+        except KeyError:
+            raise KeyError(f"Column '{ef_val}' not found in the data.")
+        
+        # Add the computed energy column to the GA matrix DataFrame.
+        # (Assumes the row order of df and df_GA is the same.)
+        df_GA[col_name] = df[col_name]
+
+    # print('Good111')    
+    # Remove rows where the site is 'slab' or 'NA'
+    df_GA = df_GA[(df_GA['site'] != 'slab') & (df_GA['site'] != 'NA')]
+    
+    # Save the GA matrix to CSV
+    output_csv = "GA_matrix.csv"
+    
+    df_GA.to_csv(output_csv, index=False)
+    print("GA matrix saved as", output_csv)
+    
+    return df_GA
+
+
+def get_GA_matrix(cluster_path, EF):
+    """
+    Retrieve the GA matrix from the CSV file if it exists; otherwise, generate it.
+    Then extract the feature matrix X and target vector Y.
+
+    Args:
+        EF (str): The EF value (as a string) used to label the adsorption energy column.
+                  For example, if EF='0.6', the energy column is assumed to be 'E_ads_0.6'.
+
+    Returns:
+        tuple: (df_matrix, X, Y, n_group)
+            - df_matrix: The full GA matrix DataFrame (including 'site' and adsorption energy columns).
+            - X: The features as a NumPy array (with 'site' and all adsorption energy columns removed).
+            - Y: The target adsorption energies (from the corresponding column).
+            - n_group: The number of feature columns in X.
+    """
+    csv_filepath = './GA_matrix.csv'
+    
+    # Check if the GA_matrix.csv exists
+    if os.path.exists(csv_filepath):
+        print("GA_matrix.csv found. Reading file...")
+        df_matrix = pd.read_csv(csv_filepath)
+    else:
+        print("GA_matrix.csv not found. Generating GA matrix...")
+        # Assumes that generate_GA_matrix is defined and cluster_path is valid.        
+        df_matrix = generate_GA_matrix(cluster_path)
+    # Determine the adsorption energy prefix.
+    
+    print(df_matrix)
+    prop_list = ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6", "polarizability", "dipole", "c"]
+   
+    # if any(col.startswith('Eads_') for col in df_matrix.columns):
+    #     prefix = 'Eads_'
+    # else:
+    #     raise KeyError("No adsorption energy columns found in GA_matrix.")
+    
+    # Determine the target adsorption energy column name based on EF.
+    # If EF is empty, we remove the trailing underscore from the prefix.
+    # col_name = prefix[:-1] if EF == "" else prefix + EF
+
+    # # Extract Y values (adsorption energies)
+    # try:
+    #     Y = df_matrix[col_name].values
+    # except KeyError:
+    #     raise KeyError(f"The expected adsorption energy column '{col_name}' is not found in the GA matrix.")
+    
+    # Extract Y values (adsorption energies)
+    try:
+        Y = df_matrix[EF].values
+    except KeyError:
+        raise KeyError(f"The expected adsorption energy column '{EF}' is not found in the GA matrix.")
+    
+    # Drop the 'site' column and all adsorption energy columns (those starting with the prefix) to get X.
+    cols_to_drop = ['site'] + [col for col in prop_list]
+    df_features = df_matrix.drop(columns=cols_to_drop)
+    X = df_features.values
+    n_group = df_features.shape[1]
+    
+    return df_matrix, X, Y, n_group
     
 def get_species_from_cwd():
     # cwd = os.getcwd()
@@ -640,62 +896,6 @@ def get_species_from_cwd():
         return species
     else:
         print("No species found in the current working directory.")
-
-
-def get_GA_matrix(cluster_path, EF):
-    """
-    Retrieve the GA matrix from the CSV file if it exists; otherwise, generate it.
-    Then extract the feature matrix X and target vector Y.
-
-    Args:
-        EF (str): The EF value (as a string) used to label the adsorption energy column.
-                  For example, if EF='0.6', the energy column is assumed to be 'E_ads_0.6'.
-
-    Returns:
-        tuple: (df_matrix, X, Y, n_group)
-            - df_matrix: The full GA matrix DataFrame (including 'site' and adsorption energy columns).
-            - X: The features as a NumPy array (with 'site' and all adsorption energy columns removed).
-            - Y: The target adsorption energies (from the corresponding column).
-            - n_group: The number of feature columns in X.
-    """
-    csv_filepath = './GA_matrix.csv'
-    df_matrix = pd.read_csv(csv_filepath)
-    
-    prop_list = ["E_ads_-0.6", "E_ads_-0.4", "E_ads_-0.2", "E_ads_0.0", "E_ads_0.2", "E_ads_0.4", "E_ads_0.6", "polarizability", "dipole", "c"]
-   
-    # if any(col.startswith('Eads_') for col in df_matrix.columns):
-    #     prefix = 'Eads_'
-    # else:
-    #     raise KeyError("No adsorption energy columns found in GA_matrix.")
-    
-    # Determine the target adsorption energy column name based on EF.
-    # If EF is empty, we remove the trailing underscore from the prefix.
-    # col_name = prefix[:-1] if EF == "" else prefix + EF
-
-    # # Extract Y values (adsorption energies)
-    # try:
-    #     Y = df_matrix[col_name].values
-    # except KeyError:
-    #     raise KeyError(f"The expected adsorption energy column '{col_name}' is not found in the GA matrix.")
-    
-    # Extract Y values (adsorption energies)
-    if EF not in  ["polarizability", "dipole", "c"]:
-        prop = 'E_ads_' + str(EF) 
-    else: 
-        prop = EF
-    try:
-        Y = df_matrix[prop].values
-    except KeyError:
-        raise KeyError(f"The expected adsorption energy column '{EF}' is not found in the GA matrix.")
-    
-    # Drop the 'site' column and all adsorption energy columns (those starting with the prefix) to get X.
-    cols_to_drop = ['site'] + [col for col in prop_list]
-    df_features = df_matrix.drop(columns=cols_to_drop)
-    X = df_features.values
-    n_group = df_features.shape[1]
-    
-    return df_matrix, X, Y, n_group
-
 
 def GA_prediction(X_training, Y_training):
     '''Run conventional GA approach '''
@@ -1056,114 +1256,160 @@ def active_learning_one_model(models, model_name, EF, X, Y, sites,
 
     return results
 
+# def active_learning_one_model(models, model_name, EF, X, Y, sites, 
+#                               initial_ratio=0.4, increment=0.05, max_ratio=0.95,
+#                               error_threshold=0.5, results_dir='results'):
+#     """
+#     Perform an active learning process for a single model, saving both training
+#     and testing predictions and metrics each iteration, and finally output a
+#     combined CSV of train/test metrics.
+
+#     Returns:
+#         list of dict: metrics per iteration.
+#     """
+#     # cluster_path = '../slab'
+#     # GA_full = get_full_GA_matrix(cluster_path)
+#     # GA_matrix_full = clean_ga_matrix(GA_full)
+
+#     total_samples = len(X)
+#     idx = np.arange(total_samples)
+#     np.random.shuffle(idx)
+
+#     # Initial train/test split
+#     n_train = int(total_samples * initial_ratio)
+#     train_idx = idx[:n_train].tolist()
+#     test_idx  = idx[n_train:].tolist()
+
+#     os.makedirs(results_dir, exist_ok=True)
+#     results = []
+#     iteration = 0
 
 
-def get_matrix_to_be_predicted(cluster_path, site):
-    
-    site = str(site)
-    
-    ga_matrix_file = os.path.join(cluster_path, 'GA_matrix_full.csv')
-    GA_matrix_full = pd.read_csv(ga_matrix_file)
-    
-    def get_feature_by_site(df, site):
-        """
-        根据 site 值获取对应的一行特征（去掉 'site' 列）。
-    
-        参数：
-            df (pd.DataFrame): 原始DataFrame，包含'site'列和多个特征列
-            site (int): 要查询的 site 编号
-    
-        返回：
-            np.ndarray: shape 为 (1, n_features) 的 NumPy 数组
-        """
-        row = df[df['site'] == site]
-        if row.empty:
-            raise ValueError(f"Site {site} not found in the DataFrame.")
-        return row.drop(columns=['site']).values
-    
-    matrix_site = get_feature_by_site(GA_matrix_full, site)
-    # # Load or generate GA data
-    # try: 
-    #     GA_dict, groups = load_ga_data(cluster_path)
-    # except Exception as e:
-    #     print("Error loading GA data:", e)
-    #     get_CN_GA(cluster_path, mult=0.9)
-    #     GA_dict, groups = load_ga_data(cluster_path)
-    # # print(GA_dict)
-    # """ Get the group matrix of one site"""
-    # try:
-    #     groups_site = GA_dict[site]
-    # except:
-    #     site = str(site)
-    #     groups_site = GA_dict[site]
-    # matrix_site = []
-    # for group in groups:
-    #     num_group = 0
-    #     for group_site in groups_site:
-    #         if group_site == group:
-    #             num_group += 1
-    #     matrix_site.append(num_group)
-    # matrix_site = np.array([matrix_site])
 
-    return matrix_site
+#     while len(train_idx)/total_samples < max_ratio and test_idx:
+#         iteration += 1
 
-def predict_Eads_site(cluster_path, species, site, Prop):
-    '''Print the adsorption energy at the specific site, 
-    the data in the data_path is applied to train the GA model to predict the 
-    same species at the provided site.
-    Prop values: -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, polarizability, dipole, all are strings.
-    '''
-    preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
-    
-    # try: 
-    pkl_file = os.path.join(cluster_path,f'{species}_GA_{Prop}.pkl')
-    # print(pkl_file)
-    GA_model = joblib.load(pkl_file)  
-    # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
-    
-#     # print('Good3',preidct_matrix )
-#     ### predict the energies of species at the site    
-    E_species_ef = GA_model.predict(preidct_matrix)[0]
+#         # Prepare data
+#         X_tr, Y_tr = X[train_idx], Y[train_idx]
+#         X_te, Y_te = X[test_idx],  Y[test_idx]
+
+#         # Fit
+#         model = models[model_name]
+#         model.fit(X_tr, Y_tr)
+
+#         # E_species_ef = model.predict(GA_matrix_full) 
+#         # # Make a copy to avoid modifying the original
+#         # GA_full_with_Eads = GA_full.copy()
+#         # GA_full_with_Eads = GA_full.iloc[1:].reset_index(drop=True)
         
-    #     if species == 'NH3':
-    #         print('E_NH3', E_species_ef, 'site', site)
-        
-    # except: 
-    # try:
-        # pkl_file = os.path.join(cluster_path,f'{species}_GA_0.0.pkl')
-        # print(pkl_file)
-        # GA_model = joblib.load(pkl_file)  
-    
-        # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
-        # preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
-        # print('Good3',preidct_matrix )
-        ### predict the energies of species at the site    
-        # E_species = GA_model.predict(preidct_matrix)[0]
-        # print('E', E_species)
-    
-    # # Prediction via Taylor Expansion
-    # pkl_polarizability = os.path.join(cluster_path,f'{species}_GA_polarizability.pkl')
-    # pkl_dipole = os.path.join(cluster_path,f'{species}_GA_dipole.pkl')
-    # pkl_constant = os.path.join(cluster_path,f'{species}_GA_c.pkl')
-    
-    # polarizability_model = joblib.load(pkl_polarizability)  
-    # dipole_model = joblib.load(pkl_dipole)  
-    # constant_model = joblib.load(pkl_constant)  
-    
-    # polarizability  = polarizability_model.predict(preidct_matrix)[0]
-    # dipole  = dipole_model.predict(preidct_matrix)[0]
-    # constant = constant_model.predict(preidct_matrix)[0]
-    
-    # E_species_ef = func(float(Prop), polarizability, dipole, constant)  
-        
-        # def func(x, a, b, c):
-    #     #     return -0.5 * a * x**2 - b * x + c
-        
-    #     print(E_species_ef)
-    # except:
-    #     print('failed')
-    return E_species_ef
+#         # # Add prediction as a new column
+#         # GA_full_with_Eads['E_ads'] = E_species_ef
+#         # GA_full_with_Eads.to_csv(f'GA_E_ads_{EF}_Iter{iteration}.csv', index=False)
 
+#         # Predictions
+#         mask = ~np.isnan(Y_tr) & ~np.isnan(Y_tr_pred)
+        
+#         Y_tr_pred = model.predict(X_tr)
+#         Y_te_pred = model.predict(X_te)
+
+#         # Save model
+#         species = get_species_from_cwd()
+#         joblib.dump(model, f'{species}_{model_name}_{EF}.pkl')
+
+#         # Compute train metrics
+#         train_mae  = mean_absolute_error(Y_tr, Y_tr_pred)
+#         train_mse  = mean_squared_error(Y_tr, Y_tr_pred)
+        
+#         train_rmse = np.sqrt(train_mse)
+#         train_r2   = r2_score(Y_tr, Y_tr_pred)
+#         tr_dev     = Y_tr_pred - Y_tr
+#         train_mpd  = tr_dev.max()
+#         train_mnd  = tr_dev.min()
+
+#         # Save train predictions
+#         pd.DataFrame({
+#             'site':   np.array(sites)[train_idx],
+#             'Y_true': Y_tr,
+#             'Y_pred': Y_tr_pred
+#         }).to_csv(
+#             os.path.join(results_dir, f'train_preds_iter{iteration}_{EF}.csv'),
+#             index=False
+#         )
+
+#         # Compute test metrics
+#         mae  = mean_absolute_error(Y_te, Y_te_pred)
+#         mse  = mean_squared_error(Y_te, Y_te_pred)
+#         rmse = np.sqrt(mse)
+#         r2   = r2_score(Y_te, Y_te_pred)
+#         dev  = Y_te_pred - Y_te
+#         mpd  = dev.max()
+#         mnd  = dev.min()
+
+#         # Save test predictions
+#         pd.DataFrame({
+#             'site':   np.array(sites)[test_idx],
+#             'Y_true': Y_te,
+#             'Y_pred': Y_te_pred
+#         }).to_csv(
+#             os.path.join(results_dir, f'test_preds_iter{iteration}_{EF}.csv'),
+#             index=False
+#         )
+
+#         # Log iteration
+#         print(f"Iteration {iteration}: train MAE={train_mae:.4f}, test MAE={mae:.4f}")
+
+#         # Outliers
+#         errs = np.abs(Y_te - Y_te_pred)
+#         mask = errs > error_threshold
+#         if mask.any():
+#             outs = np.where(mask)[0]
+#             for i in outs[np.argsort(-errs[outs])]:
+#                 print(f"  Outlier: site={np.array(sites)[test_idx][i]}, err={errs[i]:.3f}")
+#         else:
+#             print("  No outliers above threshold.")
+
+#         # Record metrics
+#         results.append({
+#             'iteration':        iteration,
+#             'training_ratio':   len(train_idx)/total_samples,
+#             'n_train':          len(train_idx),
+#             'n_test':           len(test_idx),
+
+#             'train_MAE':        train_mae,
+#             'train_MSE':        train_mse,
+#             'train_RMSE':       train_rmse,
+#             'train_R2':         train_r2,
+#             'train_MPD':        train_mpd,
+#             'train_MND':        train_mnd,
+
+#             'test_MAE':         mae,
+#             'test_MSE':         mse,
+#             'test_RMSE':        rmse,
+#             'test_R2':          r2,
+#             'test_MPD':         mpd,
+#             'test_MND':         mnd,
+#         })
+
+#         # Active learning: add top-error tests to train
+#         n_add = max(1, int(total_samples * increment))
+#         n_add = min(n_add, len(test_idx))
+#         top_idxs = np.argsort(-errs)[:n_add]
+#         selected = [test_idx[i] for i in top_idxs]
+#         train_idx.extend(selected)
+#         test_idx  = [i for i in test_idx if i not in selected]
+
+#     # After loop: save combined training+testing metrics
+#     df = pd.DataFrame(results)
+#     # Order columns
+#     base_cols = ['iteration','training_ratio','n_train','n_test']
+#     metric_cols = ['MAE','MSE','RMSE','R2','MPD','MND']
+#     cols = base_cols + [f'train_{m}' for m in metric_cols] + [f'test_{m}' for m in metric_cols]
+
+#     out_file = os.path.join(results_dir, f'active_learning_metrics_{EF}.csv')
+#     df[cols].to_csv(out_file, index=False)
+#     print(f"✅ Saved combined metrics to {out_file}")
+
+#     return results
 
 def plot_active_learning_from_csv(csv_filepath, EF, results_dir='results'):
     """
@@ -1270,6 +1516,195 @@ def plot_active_predicting_from_csv(predict_csv_dir, ratio, EF):
     print(f"✅ Saved scatter plot with MAEs to {out_png}")
     
     
+# def active_learning_one_model(models, model_name, EF, X, Y, sites, 
+#                               initial_ratio=0.4, increment=0.05, max_ratio=0.95,
+#                               error_threshold=0.5, results_dir='results'):
+#     """
+#     Perform an active learning process for a single model.
+    
+#     Initially, a fraction of the data (default 40%) is used for training and the rest for testing.
+#     In each iteration, the model is trained on the current training set and evaluated on the testing set.
+#     Then, the top outliers (largest absolute errors) are selected from the testing set and added 
+#     to the training set until the training set reaches the maximum ratio (default 95%).
+    
+#     For each iteration, the following metrics are computed:
+#       - Mean Absolute Error (MAE)
+#       - Mean Squared Error (MSE)
+#       - Root Mean Squared Error (RMSE)
+#       - R² score (R2)
+#       - Maximum Positive Deviation (MPD): max(predictions - Y_test)
+#       - Maximum Negative Deviation (MND): min(predictions - Y_test)
+    
+#     Additionally, the function prints out the 'site' labels for test samples with an absolute 
+#     prediction error larger than error_threshold (default 0.5 eV).
+    
+#     Args:
+#         models (dict): Dictionary of models.
+#         model_name (str): Name of the model to use.
+#         EF: An identifier for saving results.
+#         X (np.array): Features dataset.
+#         Y (np.array): Target values.
+#         sites (np.array or list): Labels corresponding to each sample (e.g., the 'site' column).
+#         initial_ratio (float): Initial fraction of data for training (default 0.4).
+#         increment (float): Fraction of total data to add each iteration (default 0.05).
+#         max_ratio (float): Maximum fraction of data for training (default 0.95).
+#         error_threshold (float): Threshold in eV to flag outliers (default 0.5 eV).
+#         results_dir (str): Directory where results will be saved.
+    
+#     Returns:
+#         list of dict: A list of dictionaries containing performance metrics for each iteration.
+#     """
+#     total_samples = len(X)
+#     indices = np.arange(total_samples)
+#     np.random.shuffle(indices)  # Randomize the data order
+
+#     # Initial split: use first initial_ratio of samples for training.
+#     n_train = int(total_samples * initial_ratio)
+#     train_indices = indices[:n_train].tolist()
+#     test_indices = indices[n_train:].tolist()
+
+#     results = []
+#     iteration = 0
+#     current_ratio = len(train_indices) / total_samples
+
+#     # Ensure the results directory exists.
+#     os.makedirs(results_dir, exist_ok=True)
+
+#     while current_ratio < max_ratio and len(test_indices) > 0:
+#         iteration += 1
+
+#         # Build training and testing sets.
+#         X_train = X[train_indices]
+#         Y_train = Y[train_indices]
+#         X_test = X[test_indices]
+#         Y_test = Y[test_indices]
+
+#         # Train the model on the current training set.
+#         model = models[model_name]
+#         model.fit(X_train, Y_train)
+        
+#         # Predictions
+#         Y_train_pred = model.predict(X_train)
+#         Y_test_pred  = model.predict(X_test)
+                
+#         # Save the model for future prediction 
+#         species  = get_species_from_cwd() 
+#         joblib.dump(model, f'{species}_{model_name}_{EF}.pkl')
+
+
+#         # --- TRAIN METRICS & SAVE PREDICTIONS ---
+#         train_mae = mean_absolute_error(Y_train, Y_train_pred)
+#         df_train = pd.DataFrame({
+#             'site': np.array(sites)[train_indices],
+#             'Y_true': Y_train,
+#             'Y_pred': Y_train_pred
+#         })
+#         train_file = os.path.join(results_dir, f'train_preds_iter{iteration}_{EF}.csv')
+#         df_train.to_csv(train_file, index=False)
+#         # ---  METRICS & SAVE PREDICTIONS ---
+#         df_test = pd.DataFrame({
+#             'site': np.array(sites)[test_indices],
+#             'Y_true': Y_test,
+#             'Y_pred': Y_test_pred
+#         })
+#         test_file = os.path.join(results_dir, f'test_preds_iter{iteration}_{EF}.csv')
+#         df_test.to_csv(test_file, index=False)
+        
+#         # Calculate performance metrics.
+#         mae = mean_absolute_error(Y_test, Y_test_pred)
+#         mse = mean_squared_error(Y_test, Y_test_pred)
+#         rmse = np.sqrt(mse)
+#         r2 = r2_score(Y_test, Y_test_pred)
+
+#         # Compute deviations.
+#         deviations = Y_test_pred - Y_test
+#         mpd = np.max(deviations)  # Maximum positive deviation.
+#         mnd = np.min(deviations)  # Maximum negative deviation.
+
+#         # Record the results for this iteration.
+#         iter_result = {
+#             'iteration': iteration,
+#             'training_ratio': current_ratio,
+#             'n_train': len(train_indices),
+#             'n_test': len(test_indices),
+#             'MAE': mae,
+#             'MSE': mse,
+#             'RMSE': rmse,
+#             'R2': r2,
+#             'MPD': mpd,
+#             'MND': mnd
+#         }
+#         results.append(iter_result)
+
+#         # Print out 'site' labels for test samples with error > error_threshold.
+#         errors = np.abs(Y_test - Y_test_pred)
+#         test_sites = np.array(sites)[test_indices]
+#         outlier_mask = errors > error_threshold
+#         if np.any(outlier_mask):
+#             outlier_indices = np.where(outlier_mask)[0]
+#             sorted_indices = outlier_indices[np.argsort(-errors[outlier_indices])]
+#             print(f"Iteration {iteration}: Outlier site labels with error > {error_threshold} eV:")
+#             for idx in sorted_indices:
+#                 print(f"  Site: {test_sites[idx]}, Error: {errors[idx]:.3f} eV")
+#         else:
+#             print(f"Iteration {iteration}: No outliers with error > {error_threshold} eV.")
+
+#         # Determine the number of samples to add.
+#         n_to_add = int(total_samples * increment)
+#         # Safeguard: ensure at least one sample is added per iteration.
+#         if n_to_add < 1:
+#             n_to_add = 1
+#         if n_to_add > len(test_indices):
+#             n_to_add = len(test_indices)
+
+#         # Select the top n_to_add samples (by error ranking).
+#         sorted_error_indices = np.argsort(-errors)  # Largest errors first.
+#         selected_indices = [test_indices[i] for i in sorted_error_indices[:n_to_add]]
+
+#         # Move selected indices from testing to training.
+#         train_indices.extend(selected_indices)
+#         test_indices = [idx for idx in test_indices if idx not in selected_indices]
+
+#         # Update current training ratio.
+#         current_ratio = len(train_indices) / total_samples
+
+#     # Save overall results to a single CSV file.
+#     overall_csv_file = os.path.join(results_dir, f'active_learning_overall_results_{EF}.csv')
+#     results_df = pd.DataFrame(results)
+#     results_df.to_csv(overall_csv_file, index=False)
+#     print(f"Saved overall active learning results to {overall_csv_file}")
+    
+#     return results
+
+
+# def plot_active_learning_from_csv(csv_filepath,EF):
+#     """
+#     Read the active learning results from a CSV file and plot performance metrics vs. training ratio.
+    
+#     The CSV file is expected to have columns such as:
+#     'training_ratio', 'MAE', 'MSE', 'RMSE', 'R2', 'MPD', 'MND'
+    
+#     Args:
+#         csv_filepath (str): The path to the CSV file containing the active learning results.
+#     """
+#     df = pd.read_csv(csv_filepath)
+#     df.sort_values('training_ratio', inplace=True)
+#     plt.figure(figsize=(10, 6))
+#     plt.plot(df['training_ratio'], df['MAE'], marker='o', label='MAE')
+#     # plt.plot(df['training_ratio'], df['MSE'], marker='s', label='MSE')
+#     plt.plot(df['training_ratio'], df['RMSE'], marker='^', label='RMSE')
+#     # plt.plot(df['training_ratio'], df['R2'], marker='v', label='R2')
+#     plt.plot(df['training_ratio'], df['MPD'], marker='D', label='MPD')
+#     plt.plot(df['training_ratio'], df['MND'], marker='x', label='MND')
+#     plt.tick_params(axis='both', labelsize=18)
+#     plt.xlabel('Training Ratio', fontsize = 20)
+#     plt.ylabel('Metric Value', fontsize = 20)
+#     plt.title(f'Active Learning Performance Metrics vs. Training Ratio at {EF} eV/A')
+#     plt.legend(framealpha=0, fontsize=18)
+#     plt.tight_layout()
+#     plt.grid(True)
+#     plt.savefig(f'results/mae_{EF}.png', dpi=300)
+#     plt.close()
     
 def run_or_plot_active_learning(models, model_name, EF, X, Y, sites,
                                 initial_ratio=0.4, increment=0.05, max_ratio=0.95,
@@ -1341,6 +1776,91 @@ def find_all_rhombuses(atoms, connections, surface_indices, bond_length_threshol
                     rhombuses.append(rhombus_indices)
 
     return rhombuses
+
+
+def get_matrix_to_be_predicted(cluster_path, site):
+    site = str(site)
+    # Load or generate GA data
+    try: 
+        GA_dict, groups = load_ga_data(cluster_path)
+    except Exception as e:
+        print("Error loading GA data:", e)
+        get_CN_GA(cluster_path, mult=0.9)
+        GA_dict, groups = load_ga_data(cluster_path)
+    # print(GA_dict)
+    """ Get the group matrix of one site"""
+    try:
+        groups_site = GA_dict[site]
+    except:
+        site = str(site)
+        groups_site = GA_dict[site]
+    matrix_site = []
+    for group in groups:
+        num_group = 0
+        for group_site in groups_site:
+            if group_site == group:
+                num_group += 1
+        matrix_site.append(num_group)
+    matrix_site = np.array([matrix_site])
+
+    return matrix_site
+
+def predict_Eads_site(cluster_path, species, site, Prop):
+    '''Print the adsorption energy at the specific site, 
+    the data in the data_path is applied to train the GA model to predict the 
+    same species at the provided site.
+    Prop values: -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, polarizability, dipole, all are strings.
+    '''
+    preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
+    
+    # try: 
+    pkl_file = os.path.join(cluster_path,f'{species}_GA_{Prop}.pkl')
+    # print(pkl_file)
+    GA_model = joblib.load(pkl_file)  
+    # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
+    
+#     # print('Good3',preidct_matrix )
+#     ### predict the energies of species at the site    
+    E_species_ef = GA_model.predict(preidct_matrix)[0]
+        
+    #     if species == 'NH3':
+    #         print('E_NH3', E_species_ef, 'site', site)
+        
+    # except: 
+    # try:
+        # pkl_file = os.path.join(cluster_path,f'{species}_GA_0.0.pkl')
+        # print(pkl_file)
+        # GA_model = joblib.load(pkl_file)  
+    
+        # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
+        # preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
+        # print('Good3',preidct_matrix )
+        ### predict the energies of species at the site    
+        # E_species = GA_model.predict(preidct_matrix)[0]
+        # print('E', E_species)
+    
+    # # Prediction via Taylor Expansion
+    # pkl_polarizability = os.path.join(cluster_path,f'{species}_GA_polarizability.pkl')
+    # pkl_dipole = os.path.join(cluster_path,f'{species}_GA_dipole.pkl')
+    # pkl_constant = os.path.join(cluster_path,f'{species}_GA_c.pkl')
+    
+    # polarizability_model = joblib.load(pkl_polarizability)  
+    # dipole_model = joblib.load(pkl_dipole)  
+    # constant_model = joblib.load(pkl_constant)  
+    
+    # polarizability  = polarizability_model.predict(preidct_matrix)[0]
+    # dipole  = dipole_model.predict(preidct_matrix)[0]
+    # constant = constant_model.predict(preidct_matrix)[0]
+    
+    # E_species_ef = func(float(Prop), polarizability, dipole, constant)  
+        
+        # def func(x, a, b, c):
+    #     #     return -0.5 * a * x**2 - b * x + c
+        
+    #     print(E_species_ef)
+    # except:
+    #     print('failed')
+    return E_species_ef
 
 
 # ------------------ Site Conversion ------------------
