@@ -235,7 +235,8 @@ def get_connection(atoms_in, metal='Ru', mult=0.9):
         connected_indices = connections[i]
         cn_of_connected_atoms[i] = [CN[j] for j in connected_indices]
         
-        
+    # for key, val in cn_of_connected_atoms.items():
+    #     print(key, len(val))
         
     exposed_connections = {i: [j for j in connections[i] if j in exposed_top_sites] for i in exposed_top_sites}
     
@@ -281,9 +282,14 @@ def get_CN_GA(path, mult=0.9):
     def get_one_site_string(site):
         """Obtain the text string representation for single site """
         cn_values = sorted(cn_of_connected_atoms[site])
+        # print(cn_values)
         if len(cn_values) < 13:
             cn_values += [0] * (13 - len(cn_values))  # Pad with zeros if less than 12 elements
-            cn_string = ''.join(number_to_letter(num) for num in cn_values)
+        else: 
+            cn_values += [0] * (13 - 12)  # Pad with zeros if less than 12 elements
+        
+        cn_string = ''.join(number_to_letter(num) for num in cn_values)
+            
         return cn_string
     
     def get_groups_one_top_site(site):
@@ -353,6 +359,7 @@ def get_CN_GA(path, mult=0.9):
 
     
     GA_file = os.path.join(path, 'GA_dict.txt')
+
     # Writing JSON data
     with open(GA_file, 'w') as f:
         json.dump(GA_dict, f)
@@ -365,8 +372,6 @@ def get_CN_GA(path, mult=0.9):
     with open(groups_file, 'w') as f:
         for group in groups:
             f.write(f"{group}\n")
-
-
 
 
 def func(x, a, b, c):
