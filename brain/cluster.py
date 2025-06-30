@@ -266,7 +266,7 @@ def number_to_letter(num):
     return chr(ord('a') + num - 1)
 
 
-def get_CN_GA(path, mult=0.9):
+def get_CN_GA(path, mult=0.9, metal='Ru'):
     
     '''
     Important: it is the path for the clean cluster. 
@@ -276,8 +276,8 @@ def get_CN_GA(path, mult=0.9):
     '''    
     file_in = os.path.join(path,'POSCAR')
     atoms = read(file_in)
-    
-    connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites  = get_connection(atoms, metal='Ru', mult=0.9)
+    print(metal)
+    connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites  = get_connection(atoms, metal, mult=0.9)
     
     def get_one_site_string(site):
         """Obtain the text string representation for single site """
@@ -2220,12 +2220,11 @@ def add_more_bri(path):
     for site in folders:     
         add_more_atoms(site)
         
-def get_active_sites(cluster_path):   # Path: the cluster model directory
+def get_active_sites(cluster_path,metal = 'Ru'):   # Path: the cluster model directory
     poscar = os.path.join(cluster_path, 'POSCAR')
     atoms = read(poscar)
     bond_length_threshold = 2.7
-    metal = 'Ru'
-
+    
     """ Step1: obtain the top sites""" 
     list_file = os.path.join(cluster_path, 'list')   ### list all the top sites in one line
     if not os.path.exists(list_file):
