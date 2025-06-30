@@ -214,8 +214,9 @@ def get_top_sites(atoms_in, metal = 'Ru', mult=0.9):
     return exposed_top_sites
 
 def get_connection(atoms_in, metal='Ru', mult=0.9):
+        
     # atoms_in = read(path + '/POSCAR')
-
+    
     filtered_atoms = [atom for atom in atoms_in if atom.symbol in [metal]]
     atoms = Atoms(filtered_atoms)
     radii = natural_cutoffs(atoms, mult=mult)
@@ -224,58 +225,39 @@ def get_connection(atoms_in, metal='Ru', mult=0.9):
     CN_matrix = nl.get_connectivity_matrix(sparse=False)
     CN = CN_matrix.sum(axis=0)
     exposed_top_sites = [i for i, cn in enumerate(CN) if cn <= 9]       # Exposed top sites (CN <= 9)
-
+    
     connections = {}     # Get the connections of all atoms
     for i in range(len(atoms)):
         connections[i] = list(np.where(CN_matrix[i])[0])
-
+        
     cn_of_connected_atoms = {}      # Request 2: Calculate the CN of the connected atoms
     for i in range(len(atoms)):
         connected_indices = connections[i]
         cn_of_connected_atoms[i] = [CN[j] for j in connected_indices]
-
+        
+    # for key, val in cn_of_connected_atoms.items():
+    #     print(key, len(val))
+        
     exposed_connections = {i: [j for j in connections[i] if j in exposed_top_sites] for i in exposed_top_sites}
-
+    
     # Bridge sites (pairs of connected exposed top sites)
     bridge_sites = []
     for i in exposed_top_sites:
         for j in exposed_connections[i]:
             if i < j:  # Ensure each pair is considered only once
-                # The CN < 9 condition is not strictly necessary for bridge detection,
-                # but it is often used to focus on undercoordinated (surface) atoms.
                 bridge_sites.append([i, j])
-
+    
     # Hollow sites (triplets of closely connected exposed top sites)
     hollow_sites = []
     for i in exposed_top_sites:
         for j in exposed_connections[i]:
             for k in exposed_connections[j]:
                 if i < j and j < k and i in exposed_connections[k]:  # Ensure each triplet is considered only once and forms a triangle
-                    # The CN < 9 condition is not strictly necessary for hollow detection,
-                    # but it is often used to focus on undercoordinated (surface) atoms.
                     hollow_sites.append([i, j, k])
+                        
 
-    # Square sites (quartets of connected exposed top sites forming a closed loop)
-    square_sites = []
-    for i in exposed_top_sites:
-        for j in exposed_connections[i]:
-            if j <= i:
-                continue
-            for k in exposed_connections[j]:
-                if k in (i, j) or k <= j:
-                    continue
-                for l in exposed_connections[k]:
-                    if l in (i, j, k) or l <= k:
-                        continue
-                    # Check if l connects back to i to form a closed loop
-                    if i in exposed_connections[l]:
-                        # Ensure all connections exist: i-j, j-k, k-l, l-i
-                        square = [i, j, k, l]
-                        # The CN < 9 condition is not strictly necessary for square detection,
-                        # but it is often used to focus on undercoordinated (surface) atoms.
-                        square_sites.append(square)
+    return  connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites
 
-    return connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites, square_sites
 
 def number_to_letter(num):
     """Conver the CN to letters"""
@@ -284,7 +266,7 @@ def number_to_letter(num):
     return chr(ord('a') + num - 1)
 
 
-def get_CN_GA(path, mult=0.9, metal='Ru'):
+def get_CN_GA(path, mult=0.9):
     
     '''
     Important: it is the path for the clean cluster. 
@@ -294,8 +276,8 @@ def get_CN_GA(path, mult=0.9, metal='Ru'):
     '''    
     file_in = os.path.join(path,'POSCAR')
     atoms = read(file_in)
-    print(metal)
-    connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites, square_sites  = get_connection(atoms, metal=metal, mult=0.9)
+    
+    connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites  = get_connection(atoms, metal='Ru', mult=0.9)
     
     def get_one_site_string(site):
         """Obtain the text string representation for single site """
@@ -310,46 +292,72 @@ def get_CN_GA(path, mult=0.9, metal='Ru'):
             
         return cn_string
     
-    def get_groups(site_indices, site_type):
-        """
-        Generic function to get group strings for a site (top, bridge, hollow, square).
-        site_indices: int for top, list of ints for others.
-        site_type: 'top', 'bridge', 'hollow', or 'square'
-        """
-        if site_type == 'top':
-            site = site_indices
-            groups = [get_one_site_string(site)]
-            groups += [get_one_site_string(s) for s in connections[site]]
-            return groups
-        else:
-            sites = site_indices
-            strings = [get_one_site_string(i) for i in sites]
-            groups = ['-'.join(sorted(strings))]
-            # Collect all unique surrounding atoms except the site atoms themselves
-            all_neighbors = set()
-            for i in sites:
-                all_neighbors.update(connections[i])
-            surrounding_atoms = list(all_neighbors - set(sites))
-            groups += [get_one_site_string(s) for s in surrounding_atoms]
-            return groups
+    def get_groups_one_top_site(site):
+        groups = []
+        groups.append(get_one_site_string(site))
+        surrounding_atoms = connections[site]
+        for s_atom in surrounding_atoms:
+            groups.append(get_one_site_string(s_atom))
+        return groups
+        
+    def get_groups_one_bridge_site(sites) :
+        groups = []
+        strings = [get_one_site_string(i) for i in sites]
+        sorted_strings = sorted(strings)
+        bri_site = '-'.join(sorted_strings)
+        groups.append(bri_site)
+        
+        # Step 1: Extend all_atoms with atoms from connections at indices specified by sites
+        all_atoms = []
+        all_atoms.extend(connections[i] for i in sites)
+        all_atoms = [item for sublist in all_atoms for item in sublist]
+
+        surrounding_atoms = list(set(all_atoms))
+        for i in sites: 
+            surrounding_atoms.remove(i)
+        
+        for s_atom in surrounding_atoms:
+            groups.append(get_one_site_string(s_atom))
+        return groups
+  
+    def get_groups_one_hollow_site(sites) :
+        groups = []
+        strings = [get_one_site_string(i) for i in sites]
+        sorted_strings = sorted(strings)
+        hollow_site = '-'.join(sorted_strings)
+        groups.append(hollow_site)
+        
+        # Step 1: Extend all_atoms with atoms from connections at indices specified by sites
+        all_atoms = []
+        all_atoms.extend(connections[i] for i in sites)
+        
+        # Step 2: Flatten the list of lists into a single list
+        all_atoms = [item for sublist in all_atoms for item in sublist]
+        
+        # Step 3: Remove duplicates to get surrounding_atoms
+        surrounding_atoms = list(set(all_atoms))
+
+        for i in sites: 
+            surrounding_atoms.remove(i)
+        for s_atom in surrounding_atoms:
+            groups.append(get_one_site_string(s_atom))
+        return groups    
+
 
     GA_dict = {}
     for site in exposed_top_sites:
-        key = site + 1
-        GA_dict[key] = get_groups(site, 'top')
+        key = site + 1 
+        GA_dict[key] = get_groups_one_top_site(site)
 
     for sites in bridge_sites:
-        key = '_'.join(str(i + 1) for i in sites)
-        GA_dict[key] = get_groups(sites, 'bridge')
+        key = '_'.join([str(i+1) for i in sites])
+        GA_dict[key] = get_groups_one_bridge_site(sites)
 
     for sites in hollow_sites:
-        key = '_'.join(str(i + 1) for i in sites)
-        GA_dict[key] = get_groups(sites, 'hollow')
+        key = '_'.join([str(i+1) for i in sites])
+        GA_dict[key] = get_groups_one_bridge_site(sites)
 
-    for sites in square_sites:
-        key = '_'.join(str(i + 1) for i in sites)
-        GA_dict[key] = get_groups(sites, 'square')
-
+    
     GA_file = os.path.join(path, 'GA_dict.txt')
 
     # Writing JSON data
@@ -1773,7 +1781,6 @@ def filter_rhombus_by_AC_BD(planar, non_planar, atoms, AC_cutoff=3.0):
 
     return new_planar, new_non_planar, invalid_rhombus
 
-
 def point_in_prism(point, base_vertices, normal, height):
     """
     Check if a point is inside the prism defined by the base triangle and its top translated version.
@@ -1922,7 +1929,7 @@ def filter_exposed_rhombus(candidates, atoms, height=2.5):
     Parameters:
         candidates (list): List of candidate rhombus configurations (each is a list [A, B, C, D]).
         atoms: An ASE Atoms object.
-        height (float): Height threshold (in Å) for exposure.
+        height (float): Height threshold (in Å) used in is_exposed_rhombus.
     
     Returns:
         tuple: (exposed_candidates, not_exposed_candidates)
@@ -1944,7 +1951,7 @@ def filter_rhombus_by_exposure(planar, non_planar, atoms, height=2.5):
     Given planar and non-planar candidate rhombus configurations, further filter them based on exposure.
     If a candidate is not exposed (i.e. is_exposed_rhombus() returns False), remove it from both groups
     and add it to the invalid_rhombus list.
-
+    
     Parameters:
         planar (list): List of candidate rhombus configurations classified as planar.
         non_planar (list): List of candidate configurations classified as non-planar.
@@ -2213,10 +2220,11 @@ def add_more_bri(path):
     for site in folders:     
         add_more_atoms(site)
         
-def get_active_sites(cluster_path, metal='Ru'):   # Path: the cluster model directory
+def get_active_sites(cluster_path):   # Path: the cluster model directory
     poscar = os.path.join(cluster_path, 'POSCAR')
     atoms = read(poscar)
     bond_length_threshold = 2.7
+    metal = 'Ru'
 
     """ Step1: obtain the top sites""" 
     list_file = os.path.join(cluster_path, 'list')   ### list all the top sites in one line
@@ -2232,7 +2240,6 @@ def get_active_sites(cluster_path, metal='Ru'):   # Path: the cluster model dire
     """ Step2: obtain the bridge sites """     
     bridge_list = []
     for combination in itertools.combinations(top_indices, 2):
-        ## get the atoms that form the hollow site 
         sorted_combination = sorted(combination)
         distance = atoms.get_distance(sorted_combination[0], sorted_combination[1])
         if distance < 2.6:
@@ -2459,7 +2466,7 @@ def is_valid_bridge3(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
     ru_vector /= np.linalg.norm(ru_vector)
 
     # Compute angle in degrees
-    angle_rad = np.arccos(np.clip(np.dot(n2_vector, ru_vector), -1.0, 1.0))
+    angle_rad = np.arccos(np.dot(n2_vector, ru_vector))
     angle_deg = np.degrees(angle_rad)
 
     return 75 <= angle_deg <= 115  # Allow angle range between 75°-90°
@@ -2576,10 +2583,10 @@ def classify_N2_adsorption(atoms):
         
         # **Classify Adsorption Type**
         elif bond_counts == (0, 1):
-            adsorption_type = "top"
+            adsorption_type = "top1"
             ru_site_str = format_ru_sites(ru_bonded_n1 if len(ru_bonded_n1) == 1 else ru_bonded_n2)
         elif bond_counts == (1, 1) and ru_bonded_n1 == ru_bonded_n2:
-            adsorption_type = "top"
+            adsorption_type = "top2"
             ru_site_str = format_ru_sites(ru_bonded_n1)  # One Ru index
         elif bond_counts == (1, 1):
             adsorption_type = "bridge-1"
@@ -2647,12 +2654,12 @@ def get_shortest_ru_n_distance(atoms):
 
     return min_distance
 
-def add_N2_top_sites(atoms, n_ru_distance=2.0, n_n_distance=1.19, metal='Ru'):
+def add_N2_top_sites(atoms, n_ru_distance=2.0, n_n_distance=1.19):
     """
     Add N2 molecules at top adsorption sites (Top1 and Top2).
     """
 
-    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal=metal, mult=0.9)
+    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal='Ru', mult=0.9)
     mass_center = np.mean([atom.position for atom in atoms if atom.symbol == 'Ru'], axis=0)
 
     for i, ru_index in enumerate(top_sites):
@@ -2708,7 +2715,7 @@ def add_N2_bridge_sites(atoms, n_ru_distance=2.15, n_n_distance=1.19):
     Add N2 molecules at bridge adsorption sites (Bridge-1, Bridge-2, Bridge-3, FCC-0).
     """
 
-    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal=metal, mult=0.9)
+    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal='Ru', mult=0.9)
     mass_center = np.mean([atom.position for atom in atoms if atom.symbol == 'Ru'], axis=0)
 
     for i, (ru1, ru2) in enumerate(bridge_sites):
@@ -2815,12 +2822,12 @@ def add_N2_bridge_sites(atoms, n_ru_distance=2.15, n_n_distance=1.19):
         print(f"Saved POSCAR_bridge3_{i+1}")
   
 
-def add_hollow_sites(atoms, n_ru_distance=1.95, n_n_distance=1.19, n1_height=1.5,):
+def add_hollow_sites(atoms, n_ru_distance=1.95, n_n_distance=1.19, n1_height=1.5):
     """
     Add N2 molecules at hollow adsorption sites (FCC-1, FCC-2, FCC-3).
     """
 
-    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal=metal, mult=0.9)
+    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal='Ru', mult=0.9)
     ru_positions = np.array([atom.position for atom in atoms if atom.symbol == 'Ru'])
     mass_center = np.mean(ru_positions, axis=0)
 
@@ -2854,6 +2861,7 @@ def add_hollow_sites(atoms, n_ru_distance=1.95, n_n_distance=1.19, n1_height=1.5
 
         if get_shortest_ru_n_distance(new_atoms_fcc1) < 1.5:
             write(f"POSCAR_fcc1_{i+1}_check1", new_atoms_fcc1, format='vasp')
+            print(f"Warning: Shortest Ru-N bond too short in POSCAR_fcc1_{i+1}.vasp, flipping direction...")
             direction = -direction
             n1_position_fcc1 = (pos1 + pos2) / 2 + direction * n_ru_distance
             n2_position_fcc1 = (pos2 + pos3) / 2 + direction * n_ru_distance
@@ -3110,4 +3118,4 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
     # subprocess.run("python3 NH3_v2.py 600 > mkm.out", cwd=outputs_folder, shell=True, check=True)
     
     print("✅ Workflow completed!\n")
-
+    
