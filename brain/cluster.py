@@ -33,7 +33,8 @@ from ase.io import read, write
 # plt.rc('legend', fontsize=16)  # Legend font size
 # plt.rc('figure', titlesize=20)  # Figure title font size
 plt.rcParams['font.family'] = 'Times New Roman'
-
+# plt.rcParams["font.family"] = "Times New Roman"
+plt.rcParams["font.size"]   = 14
 
 from matplotlib.patches import Patch
 import matplotlib.patches as patches
@@ -1376,6 +1377,34 @@ def convert_sites(sites_list):
     # print(site_dict)
     return site_dict
 
+def convert_sites_triangle_site(sites_list):
+    """
+    Given a list of three site numbers corresponding to atoms A, B, C(in clockwise order),
+    return a dictionary mapping standard site labels to their numeric string representations.
+    
+    For example, if sites_list = [20, 23, 24]:
+      - "top_A": "20"
+      - "top_B": "23"
+      - "top_C": "24"
+      - "bridge_A-B": "20-23"
+      - "bridge_B-C": "23-24"
+      - "bridge_A-C": "20-24"
+      - "hollow_ABC": "20-23-24"  (sorted ascending among B, C, D)
+    """
+    if len(sites_list) != 3:
+        raise ValueError("sites_list must contain exactly three elements corresponding to A, B, C.")
+    sites_list = [i + 1 for i in sites_list]
+    A, B, C = sites_list
+    site_dict = {}
+    site_dict["top_A"] = str(A)
+    site_dict["top_B"] = str(B)
+    site_dict["top_C"] = str(C)
+    site_dict["bridge_A-B"] = f"{min(A, B)}_{max(A, B)}"
+    site_dict["bridge_B-C"] = f"{min(B, C)}_{max(B, C)}"
+    site_dict["bridge_A-C"] = f"{min(A, C)}_{max(A, C)}"
+    site_dict["hollow_ABC"] = "_".join(str(x) for x in sorted([A, B, C]))
+    return site_dict
+
 # ------------------ Modified Helper Function ------------------
 def select_best_site(cluster_path, species, sites, Prop, site_mapping=None):
     """
@@ -1537,7 +1566,6 @@ def determine_N2_configuration(cluster_path, Prop, site_mapping=None):
     best_N2_site, energies_N2 = select_best_site(cluster_path, "N2", candidate_sites, Prop, site_mapping)
     return {"site": best_N2_site, "energy": energies_N2[best_N2_site]}
 
-
 # ------------------ Top-Level Full Configuration ------------------
 def determine_full_configuration(cluster_path, Prop, sites_list=None):
     """
@@ -1571,6 +1599,68 @@ def determine_full_configuration(cluster_path, Prop, sites_list=None):
         "H1":  (config_NH2["H1"]["site"], config_NH2["H1"]["energy"]),
         "H2":  (config_NH["H2"]["site"], config_NH["H2"]["energy"]),
         "H3":  (config_N["H3"]["site"], config_N["H3"]["energy"])
+    }
+    
+    return final_config
+
+
+### For triangle sites 
+# Step 1: NH₃ Adsorption
+nh3_candidates_tri = ["top_A", "top_B", "top_C"]
+nh2_candidates_tri = ["top_A", "top_B", "top_C", "bridge_A-B", "bridge_B-C", "bridge_A-C"]
+nh_candidates_tri = ["top_A", "top_B", "top_C", "bridge_A-B", "bridge_B-C", "bridge_A-C", "hollow_ABC" ]
+n_candidates_tri =  nh_candidates_tri 
+h_candidates_tri =  nh_candidates_tri 
+n2_candidates_tri = nh_candidates_tri 
+def determine_NH3_configuration_tri(cluster_path, Prop, site_mapping=None):
+    best_NH3_site, energies = select_best_site(cluster_path, "NH3", nh3_candidates_tri, Prop, site_mapping)
+    return {"site": best_NH3_site, "energy": energies[best_NH3_site]}
+def determine_NH2_configuration_tri(cluster_path, Prop, site_mapping=None):
+    best_NH2_site, energies_NH2 = select_best_site(cluster_path, "NH2", nh2_candidates_tri, Prop, site_mapping)
+    return {"NH2": {"site": best_NH2_site, "energy": energies_NH2[best_NH2_site]}}
+def determine_H_configuration_tri(cluster_path, Prop, site_mapping=None):    
+    best_H_site, energies_H = select_best_site(cluster_path, "H", h_candidates_tri, Prop, site_mapping)
+    return {"H": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}}
+def determine_NH_configuration_tri(cluster_path, Prop, site_mapping=None):
+    best_NH_site, energies_NH = select_best_site(cluster_path, "NH", nh_candidates_tri, Prop, site_mapping)
+    return {"NH": {"site": best_NH_site, "energy": energies_NH[best_NH_site]}}
+def determine_N_configuration_tri(cluster_path, Prop, site_mapping=None):
+    best_N_site, energies_N = select_best_site(cluster_path, "N", n_candidates_tri, Prop, site_mapping)
+    return {"N": {"site": best_N_site, "energy": energies_N.get(best_N_site, None)}}
+def determine_N2_configuration_tri(cluster_path, Prop, site_mapping=None):
+    best_N2_site, energies_N2 = select_best_site(cluster_path, "N2", n2_candidates_tri, Prop, site_mapping)
+    return {"site": best_N2_site, "energy": energies_N2[best_N2_site]}
+
+def determine_full_configuration_triangle_site(cluster_path, Prop, sites_list=None):
+    """
+    Determine the full stable configuration for the reaction chain and return a dictionary
+    where each species is mapped to a tuple (site, energy):
+      1. NH3 → NH2 + H      (H determined by NH2)
+      2. NH2 → NH + H       (H determined by NH)
+      3. NH  → N + H        (H determined by N)
+      4. Also determine the N2 adsorption site.
+    
+    If sites_list is provided (a list of four numbers for atoms A, B, C, D in clockwise order),
+    it is converted to a mapping for energy predictions.
+    
+    Returns a dictionary with keys:
+      "NH3", "NH2", "NH", "N", "N2", "H1", "H2", and "H3".
+    """
+    site_mapping = convert_sites_triangle_site(sites_list) 
+    config_NH3 = determine_NH3_configuration_tri(cluster_path, Prop, site_mapping)
+    config_NH2 = determine_NH2_configuration_tri(cluster_path, Prop, site_mapping)
+    config_NH = determine_NH_configuration_tri(cluster_path, Prop, site_mapping)
+    config_N = determine_N_configuration_tri(cluster_path, Prop,  site_mapping)
+    config_H = determine_H_configuration_tri(cluster_path, Prop,  site_mapping)
+    config_N2 = determine_N2_configuration_tri(cluster_path, Prop, site_mapping)
+
+    final_config = {
+        "NH3": (config_NH3["site"], config_NH3["energy"]),
+        "NH2": (config_NH2["NH2"]["site"], config_NH2["NH2"]["energy"]),
+        "NH":  (config_NH["NH"]["site"], config_NH["NH"]["energy"]),
+        "N":   (config_N["N"]["site"], config_N["N"]["energy"]),
+        "N2":  (config_N2["site"], config_N2["energy"]),
+        "H":   (config_H["H"]["site"], config_H["H"]["energy"]),
     }
     
     return final_config
@@ -1622,11 +1712,11 @@ def compute_EDFT(ef_value, final_config, gas_dict):
         final_config["N"][1] + E_slab + 0.5 * gas_dict["N2"]
     )
 
-    for h in ["H1", "H2", "H3"]:
-        edft[h] = (
-            final_config[h][0],
-            final_config[h][1],
-            final_config[h][1] + E_slab + 0.5 * gas_dict["H2"]
+
+    edft["H"] = (
+        final_config["H"][0],
+        final_config["H"][1],
+        final_config["H"][1] + E_slab + 0.5 * gas_dict["H2"]
         )
 
     edft["N2"] = (
@@ -1635,7 +1725,7 @@ def compute_EDFT(ef_value, final_config, gas_dict):
         final_config["N2"][1] + E_slab + gas_dict["N2"]
     )
 
-    return edft
+    return edft, E_slab
 
 
 def find_rhombus(atoms, top_list, B, D, bond_threshold=2.6):
@@ -2959,11 +3049,14 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     E_N  = adsorption_data['N'][2]
     E_N_N = 2 * adsorption_data['N'][2] - E_slab + 0.5
     E_N2 = adsorption_data['N2'][2] 
-    
-    E_H1  = adsorption_data['H1'][2]  
-    E_H2  = adsorption_data['H2'][2] 
-    E_H3  = adsorption_data['H3'][2] 
-    E_H   = min([E_H1,E_H2,E_H3])
+    try:
+        E_H1  = adsorption_data['H1'][2]  
+        E_H2  = adsorption_data['H2'][2] 
+        E_H3  = adsorption_data['H3'][2] 
+        E_H   = min([E_H1,E_H2,E_H3])
+    except:
+        E_H   =  adsorption_data['H'][2]
+        
     replacement_dict['H(T)'] = E_H
     
     
@@ -2974,10 +3067,14 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     
     replacement_dict['N_N(T)'] = E_N_N
     
+    print('E_N_ads:', adsorption_data['N'][1])
+    print('E_H_ads:', adsorption_data['H'][1])
+    print('E_N2_ads:', adsorption_data['N2'][1])
+    print('E_NH3_ads:', adsorption_data['NH3'][1])
 
-    reaction_energy_1 = E_NH2 + E_H1 - E_NH3 - E_slab
-    reaction_energy_2 = E_NH  + E_H2 - E_NH2 - E_slab
-    reaction_energy_3 = E_N   + E_H3 - E_NH  - E_slab
+    reaction_energy_1 = E_NH2 + E_H - E_NH3 - E_slab
+    reaction_energy_2 = E_NH  + E_H - E_NH2 - E_slab
+    reaction_energy_3 = E_N   + E_H - E_NH  - E_slab
     reaction_energy_4 = E_N2  - E_N_N
 
     # Ea = a * ΔE + b
@@ -2995,7 +3092,7 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
 
     Ea_list = [Ea1, Ea2, Ea3, Ea4]
     # print('DE1', reaction_energy_1)
-    # print('Ea', Ea_list)
+    # print('Ea_list', Ea_list)
     # 
     Ea_list = [max(0.01, ea) for ea in Ea_list]
     
@@ -3011,6 +3108,316 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     ref_dict = {k: v - E_slab for k, v in replacement_dict.items()}
 
     return ref_dict
+def build_refdict_and_plot_rc_double_NH3(ef_value: float, adsorption_data: dict, outputs_folder: str = "outputs") -> dict:
+    os.makedirs(outputs_folder, exist_ok=True)
+
+    # Gas-phase reference energies
+    E_gas = {
+        "NH3": -19.53586573,
+        "NH2": -13.53307777,
+        "NH": -8.10061060,
+        "N2": -16.62922486,
+        "H2": -6.76668776
+    }
+
+    # Field-dependent slab energy
+    E_slab = -6.2414 * ef_value**2 - 0.01405 * ef_value - 354.4197
+
+    # Adsorbed species energies
+    E_NH3_ads = adsorption_data['NH3'][2]
+    E_NH2_ads = adsorption_data['NH2'][2]
+    E_NH_ads = adsorption_data['NH'][2]
+    E_N_ads = adsorption_data['N'][2]
+    try:
+        E_H_ads = min(adsorption_data[k][2] for k in ('H1', 'H2', 'H3'))
+    except:
+        E_H_ads = adsorption_data['H'][2]
+    E_N2_ads = adsorption_data['N2'][2]
+
+    # Reaction energies (1 NH3 unit)
+    ΔE1 = E_NH3_ads - E_slab - E_gas['NH3']
+    ΔE2 = (E_NH2_ads + E_H_ads - E_slab) - E_NH3_ads
+    ΔE3 = (E_NH_ads + E_H_ads - E_slab) - E_NH2_ads
+    ΔE4 = (E_N_ads + E_H_ads - E_slab) - E_NH_ads
+    ΔE5 = (E_N2_ads + E_slab) - 2 * E_N_ads
+    ΔE6 = -adsorption_data['N2'][1]          # full N2 desorption
+    try:
+        ΔE7 = -adsorption_data['H1'][1] * 3      # 6H* → 3 H2(g)
+    except:
+        ΔE7 = -adsorption_data['H'][1] * 3
+
+    # Barriers
+    Ea_param = [(0.42, 1.36), (0.88, 0.82), (0.47, 0.81), (0.87, 2.10)]
+    Ea1 = max(0.01, Ea_param[0][0] * ΔE2 + Ea_param[0][1])
+    Ea2 = max(0.01, Ea_param[1][0] * ΔE3 + Ea_param[1][1])
+    Ea3 = max(0.01, Ea_param[2][0] * ΔE4 + Ea_param[2][1])
+    Ea4 = max(0.01, Ea_param[3][0] * ΔE5 + Ea_param[3][1])
+
+    # State labels with TS included
+    state_labels = [
+        '2NH3(g)', '2NH3*', 'TS1', '2NH2*+2H*', 'TS2',
+        '2NH*+4H*', 'TS3', '2N*+6H*', 'TS4',
+        'N2*+6H*', 'N2(g)+6H*', 'N2(g)+3H2(g)'
+    ]
+
+    # Compute relE
+    relE = [0]
+    relE.append(relE[-1] + 2 * ΔE1)           # 2NH3*
+    relE.append(relE[-1] + 2 * Ea1)           # TS1
+    relE.append(relE[-2] + 2 * ΔE2)           # 2NH2*+2H*
+    relE.append(relE[-1] + 2 * Ea2)           # TS2
+    relE.append(relE[-2] + 2 * ΔE3)           # 2NH*+4H*
+    relE.append(relE[-1] + 2 * Ea3)           # TS3
+    relE.append(relE[-2] + 2 * ΔE4)           # 2N*+6H*
+    relE.append(relE[-1] + Ea4)               # TS4
+    relE.append(relE[-2] + ΔE5)               # N2*+6H*
+    relE.append(relE[-1] + ΔE6)               # N2(g)+6H*
+    relE.append(relE[-1] + ΔE7)               # N2(g)+3H2(g)
+
+    # Sanity check: match to total gas-phase reaction energy
+    ΔE_total_gas = E_gas['N2'] + 3 * E_gas['H2'] - 2 * E_gas['NH3']
+    relE[-1] = ΔE_total_gas  # enforce exact gas-phase energy consistency
+
+    # Build x/y for platform plot
+    x_vals, y_vals = [], []
+    for i, e in enumerate(relE):
+        x_vals.extend([i, i + 1])
+        y_vals.extend([e, e])
+
+    labels_expanded = []
+    for label in state_labels:
+        labels_expanded.extend([label, label])
+
+    df_rc = pd.DataFrame({'x': x_vals, 'y': y_vals, 'label': labels_expanded})
+    df_rc.to_csv(os.path.join(outputs_folder, 'rc.csv'), index=False)
+
+    # Plot
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_vals, y_vals, '-k', lw=2)
+    plt.scatter([i + 0.5 for i in range(len(relE))], relE, color='k', s=30, zorder=3)
+    plt.axhline(0, ls='--', color='gray')
+    plt.xticks([i + 0.5 for i in range(len(state_labels))], state_labels, rotation=45, ha='right')
+    plt.ylabel('Relative energy (eV)')
+    plt.title(f'2 NH₃ → N₂ + 3 H₂   |   EF = {ef_value:.1f} V/Å')
+    plt.tight_layout()
+    plt.savefig(os.path.join(outputs_folder, f'reaction_coordinate_2NH3_EF_{ef_value}.png'), dpi=300)
+    plt.close()
+
+    # print("E_end:", relE[-1], "E_end_gas_ref:", ΔE_total_gas)
+    # return df_rc, relE[-1], ΔE_total_gas  # return for optional use
+
+
+def build_refdict_and_plot_rc(ef_value: float, adsorption_data: dict, outputs_folder: str = "outputs") -> dict:
+    os.makedirs(outputs_folder, exist_ok=True)
+
+    # Gas-phase reference energies
+    E_gas = {"NH3": -19.53586573, "NH2": -13.53307777, "NH": -8.10061060,
+             "N2": -16.62922486, "H2": -6.76668776}
+
+    # Field-dependent slab energy
+    E_slab = -6.2414 * ef_value**2 - 0.01405 * ef_value - 354.4197
+
+    # Adsorbed species energies
+    E_NH3_ads = adsorption_data['NH3'][2]
+    E_NH2_ads = adsorption_data['NH2'][2]
+    E_NH_ads = adsorption_data['NH'][2]
+    E_N_ads = adsorption_data['N'][2]
+    E_H_ads = min(adsorption_data[k][2] for k in ('H1', 'H2', 'H3'))
+    E_N2_ads = adsorption_data['N2'][2]
+
+    # Reaction energies
+    ΔE1 = E_NH3_ads - E_slab - E_gas['NH3']
+    ΔE2 = (E_NH2_ads + E_H_ads - E_slab) - E_NH3_ads
+    ΔE3 = (E_NH_ads + E_H_ads - E_slab) - E_NH2_ads
+    ΔE4 = (E_N_ads + E_H_ads - E_slab) - E_NH_ads
+    ΔE5 = (E_N2_ads + E_slab) - 2 * E_N_ads
+    ΔE6 = -adsorption_data['N2'][1] * 0.5
+    ΔE7 = -adsorption_data['H1'][1] * 1.5
+
+    # Barrier estimation: Ea = a * ΔE + b
+    Ea_param = [(0.42, 1.36), (0.88, 0.82), (0.47, 0.81), (0.87, 2.10)]
+    Ea1 = max(0.01, Ea_param[0][0] * ΔE2 + Ea_param[0][1])
+    Ea2 = max(0.01, Ea_param[1][0] * ΔE3 + Ea_param[1][1])
+    Ea3 = max(0.01, Ea_param[2][0] * ΔE4 + Ea_param[2][1])
+    Ea4 = max(0.01, Ea_param[3][0] * ΔE5 + Ea_param[3][1])
+
+    # Extended state sequence including TS
+    state_labels = [
+        'NH3(g)', 'NH3*', 'TS1_NH3', 'NH2*+H*', 'TS2_NH2',
+        'NH*+2H*', 'TS3_NH', 'N*+3H*', 'TS4_N2',
+        'N2*+3H*', 'N2(g)+3H*', 'N2(g)+1.5H2(g)'
+    ]
+
+    # Compute state energies
+    relE = [0]
+    relE.append(relE[-1] + ΔE1)              # NH3*
+    relE.append(relE[-1] + Ea1)              # TS1
+    relE.append(relE[-2] + ΔE2)              # NH2* + H*
+    relE.append(relE[-1] + Ea2)              # TS2
+    relE.append(relE[-2] + ΔE3)              # NH* + 2H*
+    relE.append(relE[-1] + Ea3)              # TS3
+    relE.append(relE[-2] + ΔE4)              # N* + 3H*
+    relE.append(relE[-1] + Ea4)              # TS4
+    relE.append(relE[-2] + ΔE5)              # N2* + 3H*
+    relE.append(relE[-1] + ΔE6)              # N2(g) + 3H*
+    relE.append(relE[-1] + ΔE7)              # N2(g) + 1.5H2(g)
+
+    # Build platform data for plotting
+    x_vals = []
+    y_vals = []
+    for i in range(len(relE)):
+        x_vals.extend([i, i + 1])
+        y_vals.extend([relE[i]] * 2)
+    # Expand state labels to match platform points
+    labels_expanded = []
+    for label in state_labels:
+        labels_expanded.extend([label, label])
+    
+    # Save rc.csv with labels
+    df_rc = pd.DataFrame({'x': x_vals, 'y': y_vals, 'label': labels_expanded})
+    df_rc.to_csv(os.path.join(outputs_folder, 'rc.csv'), index=False)
+    # Save rc.csv
+
+    # Plot
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_vals, y_vals, '-k', lw=2)
+    plt.scatter([i + 0.5 for i in range(len(relE))], relE, color='k', s=30, zorder=3)
+    plt.axhline(0, ls='--', color='gray')
+
+    # Label x-axis
+    plt.xticks([i + 0.5 for i in range(len(state_labels))], state_labels, rotation=45, ha='right')
+    plt.ylabel('Relative energy (eV)')
+    plt.title(f'EF = {ef_value:.1f} V/Å')
+    plt.tight_layout()
+    plt.savefig(os.path.join(outputs_folder, f'reaction_coordinate_EF_{ef_value}.png'), dpi=300)
+    plt.close()
+
+    # Replacement dict
+    repl = {
+        "RU(T)": E_slab,
+        "NH3(T)": E_NH3_ads,
+        "NH2(T)": E_NH2_ads,
+        "NH(T)": E_NH_ads,
+        "N(T)": E_N_ads,
+        "N2(T)": E_N2_ads,
+        "Hv1(T)": adsorption_data['H1'][2],
+        "Hv2(T)": adsorption_data['H2'][2],
+        "Hv3(T)": adsorption_data['H3'][2],
+        "H(T)": E_H_ads,
+        "N_N(T)": 2 * E_N_ads - E_slab + 0.5,
+        "TS1_NH3(T)": E_NH3_ads + Ea1,
+        "TS2_NH2(T)": E_NH2_ads + Ea2,
+        "TS3_NH(T)": E_NH_ads + Ea3,
+        "TS4_N2(T)": 2 * E_N_ads - E_slab + 0.5 + Ea4
+    }
+
+    ref_dict = {k: v - E_slab for k, v in repl.items()}
+    return ref_dict
+
+def plot_rc(EF, edft, e_slab, outputs_folder):
+    E_gas = {                 # gas
+        "H": -1.11671722,
+        "H2": -6.76668776,
+        "N": -3.12298738,
+        "N2": -16.62922486,
+        "NH": -8.10061060,
+        "NH2": -13.53307777,
+        "NH3": -19.53586573,
+    }
+
+    # ---------- 3. 取常用能量 ----------
+    E_NH3_ads  = edft['NH3'][2]          # slab+NH3
+    E_NH2_ads  = edft['NH2'][2]
+    E_NH_ads   = edft['NH'][2]
+    E_N_ads    = edft['N'][2]
+    E_H_ads    = min(edft[k][2] for k in ('H1','H2','H3'))  # 最稳定 H
+    E_N2_ads   = edft['N2'][2]
+    
+    # ---------- 4. 逐步反应热 ----------
+    steps   = []
+    labels  = []
+    
+    # 0) 初始气相
+    cumE = 0.0
+    steps.append(cumE); labels.append('NH$_3$(g)')
+    
+    # 1) NH3 吸附
+    dE1  = E_NH3_ads - e_slab - E_gas['NH3']
+    cumE += dE1
+    steps.append(cumE); labels.append('NH$_3$*')
+    
+    # 2) NH3 → NH2* + H*
+    dE2  = (E_NH2_ads + E_H_ads - e_slab) - E_NH3_ads
+    cumE += dE2
+    steps.append(cumE); labels.append('NH$_2$* + H*')
+    
+    # 3) NH2* → NH* + H*
+    dE3  = (E_NH_ads + E_H_ads - e_slab) - E_NH2_ads
+    cumE += dE3
+    steps.append(cumE); labels.append('NH* + 2H*')
+    
+    # 4) NH* → N* + H*
+    dE4  = (E_N_ads + E_H_ads - e_slab) - E_NH_ads
+    cumE += dE4
+    steps.append(cumE); labels.append('N* + 3H*')
+    
+    # 5) N* + N* → N2*
+    dE5  = (E_N2_ads + e_slab) - 2 * E_N_ads
+    cumE += dE5/2
+    steps.append(cumE); labels.append('N$_2$* + 3H*')
+    
+    # 6) N2 脱附
+    dE6  = - edft['N2'][1] * 0.5          # 按给定规则：吸附能的 -½
+    cumE += dE6
+    steps.append(cumE); labels.append('N$_2$(g) + 3H*')
+    
+    # 7) 3H* → 1.5 H2(g)
+    dE7  = - edft['H1'][1] * 1.5          # 最稳定 H 的吸附能 × -1.5
+    cumE += dE7
+    steps.append(cumE); labels.append('N$_2$(g) + 1.5H$_2$(g)')
+    
+    # ---------- 5. 画 Reaction Coordinate ----------
+    # x = range(len(steps))
+    # plt.figure(figsize=(8,5))
+    # plt.plot(x, steps, '-o', lw=2, ms=6, color='k')
+    # plt.axhline(0, ls='--', color='grey', lw=1)
+    
+    # plt.xticks(x, labels, rotation=45, ha='right')
+    # plt.ylabel('Relative energy (eV)')
+    # plt.tight_layout()
+    # plt.savefig('reaction_coordinate.png', dpi=300)
+    # plt.show()
+    
+    # --- 构造平台坐标 ---
+    x_vals = []
+    y_vals = []
+    for i in range(len(steps)):
+        x_vals.extend([i, i+1])
+        y_vals.extend([steps[i]] * 2)
+    df_rc = pd.DataFrame({'x': x_vals, 'y': y_vals})
+    df_rc.to_csv(os.path.join(outputs_folder, 'rc.csv'), index=False)
+    
+    # --- 设置平台中点 label 的位置 ---
+    label_pos = [(i + i + 1)/2 for i in range(len(steps))]
+    
+    # --- 绘图 ---
+    plt.figure(figsize=(8,5))
+    plt.plot(x_vals, y_vals, '-', lw=2, color='k', label=f'EF = {EF:.1f} V/Å')
+    plt.scatter(label_pos, steps, s=30, color='k', zorder=3)  # 小圆点标示每个状态
+    plt.axhline(0, ls='--', color='gray', lw=1)
+    
+    # x-axis
+    plt.xticks(label_pos, labels, rotation=45, ha='right')
+    plt.xlim(0, len(steps))
+    plt.ylabel('Relative energy (eV)')
+    plt.legend()
+
+    plt.tight_layout()
+    filename = os.path.join(outputs_folder, f'reaction_coordinate_EF_{EF}.png')
+    plt.savefig(filename, dpi=300)
+    plt.close()
+
+
 
 def update_excel_with_replacement(index_list, replacement_dict, ef_value,
                                   template_file="NH3_temp.xlsx", base_dir="mkm_inputs", verbose=True):
@@ -3047,7 +3454,7 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
     dft_sheet = wb["species"]
     
     # 3. Replace data in the sheet: get keys from column A, replace potential energy in column L"
-    print(f"✅ Fill the Excel Template File")
+    # print(f"✅ Fill the Excel Template File")
     
     missing_keys = []
     for row in dft_sheet.iter_rows(min_row=2, min_col=1, max_col=12):
@@ -3061,13 +3468,13 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
         else:
             missing_keys.append(key)
             
-    for key in missing_keys:
-        print(f"  - {key}")
+    # for key in missing_keys:
+        # print(f"  - {key}")
     
     # 4. Save the updated Excel file into the inputs folder
     output_path = os.path.join(inputs_folder, 'NH3_Input_Data.xlsx')
     wb.save(output_path)
-    print(f"📁 File saved to: {output_path}")
+    # print(f"📁 File saved to: {output_path}")
     
     # 5. Copy files to the outputs folder (from base_dir)
     for filename in ["NH3_MKM_Ru45.py"]:
@@ -3075,10 +3482,10 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
         dst = os.path.join(outputs_folder, filename)
         if os.path.exists(src):
             shutil.copy2(src, dst)
-            if verbose:
-                print(f"✅ Copied {filename} to {outputs_folder}")
-        else:
-            print(f"⚠️ File {filename} not found!")
+            # if verbose:
+                # print(f"✅ Copied {filename} to {outputs_folder}")
+        # else:
+            # print(f"⚠️ File {filename} not found!")
     
     # Copy OpenMKM_IO.py to the folder: mkm_inputs/index_folder/ef_folder
     src_IO = os.path.join(base_dir, "OpenMKM_IO.py")
@@ -3086,16 +3493,16 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
     dst_IO = os.path.join(dst_IO_dir, "OpenMKM_IO.py")
     if os.path.exists(src_IO):
         shutil.copy2(src_IO, dst_IO)
-        if verbose:
-            print(f"✅ Copied OpenMKM_IO.py to {dst_IO_dir}")
-    else:
-        print("⚠️ File OpenMKM_IO.py not found!")
+    #     if verbose:
+    #         print(f"✅ Copied OpenMKM_IO.py to {dst_IO_dir}")
+    # else:
+    #     print("⚠️ File OpenMKM_IO.py not found!")
     
     # 6. Workflow:
     main_folder = os.path.join(base_dir, index_folder, ef_folder)    
     
     # 6.1 Change to main_folder and execute "python3 OpenMKM_IO.py"
-    print("✅ Generating the MKM inputs...")
+    # print("✅ Generating the MKM inputs...")
     # subprocess.run(["python3", "OpenMKM_IO.py"], cwd=main_folder, check=True)
     prepare_yaml(main_folder)
     
@@ -3105,10 +3512,10 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
     # update_yaml(yaml_file)
     
     # 6.3 In outputs folder, run "python3 NH3_v2.py 600 > mkm.out"
-    print("✅ Running MKM...")
+    # print("✅ Running MKM...")
     #T = 400   # Celcius
     #run_mkm(main_folder, T)
     # subprocess.run("python3 NH3_v2.py 600 > mkm.out", cwd=outputs_folder, shell=True, check=True)
     
-    print("✅ Workflow completed!\n")
+    # print("✅ Workflow completed!\n")
 
