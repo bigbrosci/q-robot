@@ -8,15 +8,19 @@ import copy
 import math
 import matplotlib.pyplot as plt
 import joblib  # import the joblib library
+from ase import Atoms, io
 import platform
 import re
 import shutil
 import subprocess
 from openpyxl import load_workbook
+import numpy as np
+import pandas as pd
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+
+
+import numpy as np
 from ase import Atoms
 from ase.io import read, write
 
@@ -636,7 +640,7 @@ def get_species_from_cwd():
         print("No species found in the current working directory.")
 
 
-def get_GA_matrix(cluster_path, EF, Taylor=False):
+def get_GA_matrix(cluster_path, EF):
     """
     Retrieve the GA matrix from the CSV file if it exists; otherwise, generate it.
     Then extract the feature matrix X and target vector Y.
@@ -655,10 +659,22 @@ def get_GA_matrix(cluster_path, EF, Taylor=False):
     csv_filepath = './GA_matrix.csv'
     df_matrix = pd.read_csv(csv_filepath)
     
-    if Taylor: 
-        prop_list = ["E_ads_-0.6", "E_ads_-0.4", "E_ads_-0.2", "E_ads_0.0", "E_ads_0.2", "E_ads_0.4", "E_ads_0.6", "polarizability", "dipole", "c"]
-    else:
-        prop_list = ["E_ads_-0.6", "E_ads_-0.4", "E_ads_-0.2", "E_ads_0.0", "E_ads_0.2", "E_ads_0.4", "E_ads_0.6"]
+    prop_list = ["E_ads_-0.6", "E_ads_-0.4", "E_ads_-0.2", "E_ads_0.0", "E_ads_0.2", "E_ads_0.4", "E_ads_0.6", "polarizability", "dipole", "c"]
+   
+    # if any(col.startswith('Eads_') for col in df_matrix.columns):
+    #     prefix = 'Eads_'
+    # else:
+    #     raise KeyError("No adsorption energy columns found in GA_matrix.")
+    
+    # Determine the target adsorption energy column name based on EF.
+    # If EF is empty, we remove the trailing underscore from the prefix.
+    # col_name = prefix[:-1] if EF == "" else prefix + EF
+
+    # # Extract Y values (adsorption energies)
+    # try:
+    #     Y = df_matrix[col_name].values
+    # except KeyError:
+    #     raise KeyError(f"The expected adsorption energy column '{col_name}' is not found in the GA matrix.")
     
     # Extract Y values (adsorption energies)
     if EF not in  ["polarizability", "dipole", "c"]:
@@ -891,145 +907,6 @@ def clean_ga_matrix(df):
     return df.iloc[1:].drop(columns=['site']).reset_index(drop=True).apply(pd.to_numeric, errors='coerce')
 
 
-def plot_active_learning_from_csv(EF, results_dir='results'):
-    """
-    Read the combined active learning results CSV and plot both training and testing
-    performance metrics vs. training ratio.
-
-    The CSV is expected to have columns:
-      'training_ratio',
-      'train_MAE','train_MSE','train_RMSE','train_R2','train_MPD','train_MND',
-      'test_MAE', 'test_MSE', 'test_RMSE', 'test_R2', 'test_MPD', 'test_MND'
-
-    Args:
-        csv_filepath (str): Path to the combined CSV file.
-        EF (str or float): The EF value for labeling the plot.
-        results_dir (str): Directory where the plot will be saved.
-    """
-    overall_csv_file = os.path.join(results_dir, f'active_learning_metrics_{EF}.csv')
-    df = pd.read_csv(overall_csv_file)
-    df.sort_values('training_ratio', inplace=True)
-
-    plt.figure(figsize=(10, 6))
-    # Plot MAE
-    plt.plot(df['training_ratio'], df['train_MAE'],  marker='o', linestyle='--', color = 'tab:blue', label='Train MAE')
-    plt.plot(df['training_ratio'], df['test_MAE'],   marker='o', linestyle='-', color = 'tab:red', label='Test MAE')
-    # Plot RMSE
-    plt.plot(df['training_ratio'], df['train_RMSE'], marker='^', linestyle='--', color = 'tab:blue', label='Train RMSE')
-    plt.plot(df['training_ratio'], df['test_RMSE'],  marker='^',linestyle='-',  color = 'tab:red', label='Test RMSE')
-    # # Plot MPD
-    # plt.plot(df['training_ratio'], df['train_MPD'],  marker='D', label='Train MPD')
-    # plt.plot(df['training_ratio'], df['test_MPD'],   marker='d', label='Test MPD')
-    # # Plot MND
-    # plt.plot(df['training_ratio'], df['train_MND'],  marker='x', label='Train MND')
-    # plt.plot(df['training_ratio'], df['test_MND'],   marker='*', label='Test MND')
-
-    plt.xlabel('Training Ratio', fontsize=16)
-    plt.ylabel('Metric Value', fontsize=16)
-    plt.title(f'Active Learning Metrics vs. Training Ratio (EF = {EF})', fontsize=18)
-    plt.legend(fontsize=12, framealpha=0.8)
-    plt.grid(True)
-    plt.tight_layout()
-
-    # Ensure results_dir exists
-    os.makedirs(results_dir, exist_ok=True)
-    out_png = os.path.join(results_dir, f'active_learning_metrics_{EF}.png')
-    plt.savefig(out_png, dpi=300)
-    plt.close()
-    print(f"✅ Plot saved to {out_png}")
-
-    
-def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
-    """
-    Read training and testing prediction CSVs for a given iteration (ratio) and EF,
-    plot true vs. predicted scatter for both sets, annotate with MAEs calculated
-    directly from the data, and save the figure.
-
-    Args:
-        predict_csv_dir (str): Directory containing the CSVs.
-        ratio (int or str): The iteration number (used in the filename).
-        EF (float or str): The EF value (used in the filename and title).
-    """
-    # Paths to prediction CSVs
-    train_fp = os.path.join(predict_csv_dir, f'train_preds_iter{ratio}_{EF}.csv')
-    test_fp  = os.path.join(predict_csv_dir, f'test_preds_iter{ratio}_{EF}.csv')
-
-    # Read data
-    df_train = pd.read_csv(train_fp)
-    df_test  = pd.read_csv(test_fp)
-
-    # Compute MAEs directly
-    mae_train = mean_absolute_error(df_train['Y_true'], df_train['Y_pred'])
-    mae_test  = mean_absolute_error(df_test['Y_true'],  df_test['Y_pred'])
-
-    # Create scatter plot
-    plt.figure(figsize=(6,6))
-    plt.scatter(df_train['Y_true'], df_train['Y_pred'],
-                color='tab:blue', label=f'Train (MAE = {mae_train:.3f} eV)', alpha=0.6, linestyle='--')
-    plt.scatter(df_test['Y_true'], df_test['Y_pred'],
-                color='tab:red',  label=f'Test  (MAE = {mae_test:.3f} eV)',  alpha=0.6)
-
-    # y = x reference line
-    all_vals = pd.concat([df_train[['Y_true','Y_pred']],
-                          df_test [['Y_true','Y_pred']]]).values.flatten()
-    vmin, vmax = all_vals.min(), all_vals.max()
-    plt.plot([vmin, vmax], [vmin, vmax], 'k--', lw=1)
-
-    # # Annotate MAE values
-    # text_x = vmin + 0.85*(vmax-vmin)
-    # text_y = vmax - 0.85*(vmax-vmin)
-    # plt.text(text_x, text_y,
-    #          f"MAE_train: {mae_train:.3f} eV\nMAE_test:  {mae_test:.3f} eV",
-    #          fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
-
-    # Labels and title
-    plt.xlabel('True Eads',  fontsize=14)
-    plt.ylabel('Predicted Eads', fontsize=14)
-    plt.title(f'Iteration {ratio} Predictions (EF = {EF})', fontsize=16)
-    plt.legend(framealpha=0.8, fontsize=12)
-    plt.tight_layout()
-
-    # Save figure
-    out_png = os.path.join(predict_csv_dir, f'preds_iter{ratio}_{EF}.png')
-    plt.savefig(out_png, dpi=300)
-    plt.close()
-    print(f"✅ Saved scatter plot with MAEs to {out_png}")
-    
-    # === Additional figure: ALL predictions (train + test) ===
-    all_fp = os.path.join(predict_csv_dir, f'all_preds_iter{ratio}_{EF}.csv')
-    if os.path.exists(all_fp):
-        df_all = pd.read_csv(all_fp)
-    
-        # Compute MAE for ALL directly from file
-        mae_all = mean_absolute_error(df_all['Y_true_all'], df_all['Y_pred_all'])
-    
-        # Create scatter: ALL
-        plt.figure(figsize=(6,6))
-        plt.scatter(
-            df_all['Y_true_all'], df_all['Y_pred_all'],
-            alpha=0.6, label=f'All (MAE = {mae_all:.3f} eV)'
-        )
-    
-        # y = x reference line
-        vmin_all = min(df_all['Y_true_all'].min(), df_all['Y_pred_all'].min())
-        vmax_all = max(df_all['Y_true_all'].max(), df_all['Y_pred_all'].max())
-        plt.plot([vmin_all, vmax_all], [vmin_all, vmax_all], 'k--', lw=1)
-    
-        # Labels and title
-        plt.xlabel('True Eads', fontsize=14)
-        plt.ylabel('Predicted Eads', fontsize=14)
-        plt.title(f'Iteration {ratio} ALL Predictions (EF = {EF})', fontsize=16)
-        plt.legend(framealpha=0.8, fontsize=12)
-        plt.tight_layout()
-    
-        # Save figure
-        out_png_all = os.path.join(predict_csv_dir, f'all_preds_iter{ratio}_{EF}.png')
-        plt.savefig(out_png_all, dpi=300)
-        plt.close()
-        print(f"✅ Saved ALL scatter plot with MAE to {out_png_all}")
-    else:
-        print(f"⚠️ ALL predictions file not found: {all_fp}")
-        
 def active_learning_one_model(models, model_name, EF, X, Y, sites, 
                               initial_ratio=0.4, increment=0.05, max_ratio=0.95,
                               error_threshold=0.5, results_dir='results'):
@@ -1041,7 +918,8 @@ def active_learning_one_model(models, model_name, EF, X, Y, sites,
     Returns:
         list of dict: metrics per iteration.
     """
-
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
 
     # Step 1: Remove NaNs before anything else
     valid_mask = ~np.isnan(Y)
@@ -1176,8 +1054,6 @@ def active_learning_one_model(models, model_name, EF, X, Y, sites,
         selected = [test_idx[i] for i in top_idxs]
         train_idx.extend(selected)
         test_idx = [i for i in test_idx if i not in selected]
-        
-        plot_active_predicting_from_csv(iteration, EF, predict_csv_dir='results')
 
     # Save all iteration metrics
     df = pd.DataFrame(results)
@@ -1187,9 +1063,9 @@ def active_learning_one_model(models, model_name, EF, X, Y, sites,
     out_file = os.path.join(results_dir, f'active_learning_metrics_{EF}.csv')
     df[cols].to_csv(out_file, index=False)
     print(f"✅ Saved combined metrics to {out_file}")
-    plot_active_learning_from_csv(EF, results_dir='results')
 
     return results
+
 
 
 def get_matrix_to_be_predicted(cluster_path, site):
@@ -1216,7 +1092,28 @@ def get_matrix_to_be_predicted(cluster_path, site):
         return row.drop(columns=['site']).values
     
     matrix_site = get_feature_by_site(GA_matrix_full, site)
-
+    # # Load or generate GA data
+    # try: 
+    #     GA_dict, groups = load_ga_data(cluster_path)
+    # except Exception as e:
+    #     print("Error loading GA data:", e)
+    #     get_CN_GA(cluster_path, mult=0.9)
+    #     GA_dict, groups = load_ga_data(cluster_path)
+    # # print(GA_dict)
+    # """ Get the group matrix of one site"""
+    # try:
+    #     groups_site = GA_dict[site]
+    # except:
+    #     site = str(site)
+    #     groups_site = GA_dict[site]
+    # matrix_site = []
+    # for group in groups:
+    #     num_group = 0
+    #     for group_site in groups_site:
+    #         if group_site == group:
+    #             num_group += 1
+    #     matrix_site.append(num_group)
+    # matrix_site = np.array([matrix_site])
 
     return matrix_site
 
@@ -1227,39 +1124,233 @@ def predict_Eads_site(cluster_path, species, site, Prop):
     Prop values: -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, polarizability, dipole, all are strings.
     '''
     preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
+    
+    # try: 
     pkl_file = os.path.join(cluster_path,f'{species}_GA_{Prop}.pkl')
+    # print(pkl_file)
     GA_model = joblib.load(pkl_file)  
+    # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
+    
+#     # print('Good3',preidct_matrix )
+#     ### predict the energies of species at the site    
     E_species_ef = GA_model.predict(preidct_matrix)[0]
-
+        
+    #     if species == 'NH3':
+    #         print('E_NH3', E_species_ef, 'site', site)
+        
+    # except: 
+    # try:
+        # pkl_file = os.path.join(cluster_path,f'{species}_GA_0.0.pkl')
+        # print(pkl_file)
+        # GA_model = joblib.load(pkl_file)  
+    
+        # GA_model = joblib.load(f'{species}_GA_{Prop}.pkl')  
+        # preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
+        # print('Good3',preidct_matrix )
+        ### predict the energies of species at the site    
+        # E_species = GA_model.predict(preidct_matrix)[0]
+        # print('E', E_species)
+    
+    # # Prediction via Taylor Expansion
+    # pkl_polarizability = os.path.join(cluster_path,f'{species}_GA_polarizability.pkl')
+    # pkl_dipole = os.path.join(cluster_path,f'{species}_GA_dipole.pkl')
+    # pkl_constant = os.path.join(cluster_path,f'{species}_GA_c.pkl')
+    
+    # polarizability_model = joblib.load(pkl_polarizability)  
+    # dipole_model = joblib.load(pkl_dipole)  
+    # constant_model = joblib.load(pkl_constant)  
+    
+    # polarizability  = polarizability_model.predict(preidct_matrix)[0]
+    # dipole  = dipole_model.predict(preidct_matrix)[0]
+    # constant = constant_model.predict(preidct_matrix)[0]
+    
+    # E_species_ef = func(float(Prop), polarizability, dipole, constant)  
+        
+        # def func(x, a, b, c):
+    #     #     return -0.5 * a * x**2 - b * x + c
+        
+    #     print(E_species_ef)
+    # except:
+    #     print('failed')
     return E_species_ef
 
-def predict_Eads_site_Taylor(cluster_path, species, site, Prop):
-    '''Print the adsorption energy at the specific site, 
-    the data in the data_path is applied to train the GA model to predict the 
-    same species at the provided site.
-    Prop values: -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, polarizability, dipole, all are strings.
-    '''
-    preidct_matrix =  get_matrix_to_be_predicted(cluster_path, site)
-    
-    # Prediction via Taylor Expansion
-    pkl_polarizability = os.path.join(cluster_path,f'{species}_GA_polarizability.pkl')
-    pkl_dipole = os.path.join(cluster_path,f'{species}_GA_dipole.pkl')
-    pkl_constant = os.path.join(cluster_path,f'{species}_GA_c.pkl')
-    
-    polarizability_model = joblib.load(pkl_polarizability)  
-    dipole_model = joblib.load(pkl_dipole)  
-    constant_model = joblib.load(pkl_constant)  
-    
-    polarizability  = polarizability_model.predict(preidct_matrix)[0]
-    dipole  = dipole_model.predict(preidct_matrix)[0]
-    constant = constant_model.predict(preidct_matrix)[0]
-    
-    E_species_ef = func(float(Prop), polarizability, dipole, constant)  
-    return E_species_ef
+
+def plot_active_learning_from_csv(csv_filepath, EF, results_dir='results'):
+    """
+    Read the combined active learning results CSV and plot both training and testing
+    performance metrics vs. training ratio.
+
+    The CSV is expected to have columns:
+      'training_ratio',
+      'train_MAE','train_MSE','train_RMSE','train_R2','train_MPD','train_MND',
+      'test_MAE', 'test_MSE', 'test_RMSE', 'test_R2', 'test_MPD', 'test_MND'
+
+    Args:
+        csv_filepath (str): Path to the combined CSV file.
+        EF (str or float): The EF value for labeling the plot.
+        results_dir (str): Directory where the plot will be saved.
+    """
+    df = pd.read_csv(csv_filepath)
+    df.sort_values('training_ratio', inplace=True)
+
+    plt.figure(figsize=(10, 6))
+    # Plot MAE
+    plt.plot(df['training_ratio'], df['train_MAE'],  marker='o', linestyle='--', color = 'tab:blue', label='Train MAE')
+    plt.plot(df['training_ratio'], df['test_MAE'],   marker='o', linestyle='-', color = 'tab:red', label='Test MAE')
+    # Plot RMSE
+    plt.plot(df['training_ratio'], df['train_RMSE'], marker='^', linestyle='--', color = 'tab:blue', label='Train RMSE')
+    plt.plot(df['training_ratio'], df['test_RMSE'],  marker='^',linestyle='-',  color = 'tab:red', label='Test RMSE')
+    # # Plot MPD
+    # plt.plot(df['training_ratio'], df['train_MPD'],  marker='D', label='Train MPD')
+    # plt.plot(df['training_ratio'], df['test_MPD'],   marker='d', label='Test MPD')
+    # # Plot MND
+    # plt.plot(df['training_ratio'], df['train_MND'],  marker='x', label='Train MND')
+    # plt.plot(df['training_ratio'], df['test_MND'],   marker='*', label='Test MND')
+
+    plt.xlabel('Training Ratio', fontsize=16)
+    plt.ylabel('Metric Value', fontsize=16)
+    plt.title(f'Active Learning Metrics vs. Training Ratio (EF = {EF})', fontsize=18)
+    plt.legend(fontsize=12, framealpha=0.8)
+    plt.grid(True)
+    plt.tight_layout()
+
+    # Ensure results_dir exists
+    os.makedirs(results_dir, exist_ok=True)
+    out_png = os.path.join(results_dir, f'active_learning_metrics_{EF}.png')
+    plt.savefig(out_png, dpi=300)
+    plt.close()
+    print(f"✅ Plot saved to {out_png}")
 
 
     
+def plot_active_predicting_from_csv(predict_csv_dir, ratio, EF):
+    """
+    Read training and testing prediction CSVs for a given iteration (ratio) and EF,
+    plot true vs. predicted scatter for both sets, annotate with MAEs calculated
+    directly from the data, and save the figure.
 
+    Args:
+        predict_csv_dir (str): Directory containing the CSVs.
+        ratio (int or str): The iteration number (used in the filename).
+        EF (float or str): The EF value (used in the filename and title).
+    """
+    # Paths to prediction CSVs
+    train_fp = os.path.join(predict_csv_dir, f'train_preds_iter{ratio}_{EF}.csv')
+    test_fp  = os.path.join(predict_csv_dir, f'test_preds_iter{ratio}_{EF}.csv')
+
+    # Read data
+    df_train = pd.read_csv(train_fp)
+    df_test  = pd.read_csv(test_fp)
+
+    # Compute MAEs directly
+    mae_train = mean_absolute_error(df_train['Y_true'], df_train['Y_pred'])
+    mae_test  = mean_absolute_error(df_test['Y_true'],  df_test['Y_pred'])
+
+    # Create scatter plot
+    plt.figure(figsize=(6,6))
+    plt.scatter(df_train['Y_true'], df_train['Y_pred'],
+                color='tab:blue', label=f'Train (MAE = {mae_train:.3f} eV)', alpha=0.6, linestyle='--')
+    plt.scatter(df_test['Y_true'], df_test['Y_pred'],
+                color='tab:red',  label=f'Test  (MAE = {mae_test:.3f} eV)',  alpha=0.6)
+
+    # y = x reference line
+    all_vals = pd.concat([df_train[['Y_true','Y_pred']],
+                          df_test [['Y_true','Y_pred']]]).values.flatten()
+    vmin, vmax = all_vals.min(), all_vals.max()
+    plt.plot([vmin, vmax], [vmin, vmax], 'k--', lw=1)
+
+    # # Annotate MAE values
+    # text_x = vmin + 0.85*(vmax-vmin)
+    # text_y = vmax - 0.85*(vmax-vmin)
+    # plt.text(text_x, text_y,
+    #          f"MAE_train: {mae_train:.3f} eV\nMAE_test:  {mae_test:.3f} eV",
+    #          fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+
+    # Labels and title
+    plt.xlabel('True Eads',  fontsize=14)
+    plt.ylabel('Predicted Eads', fontsize=14)
+    plt.title(f'Iteration {ratio} Predictions (EF = {EF})', fontsize=16)
+    plt.legend(framealpha=0.8, fontsize=12)
+    plt.tight_layout()
+
+    # Save figure
+    out_png = os.path.join(predict_csv_dir, f'preds_iter{ratio}_{EF}.png')
+    plt.savefig(out_png, dpi=300)
+    plt.close()
+    print(f"✅ Saved scatter plot with MAEs to {out_png}")
+    
+    # === Additional figure: ALL predictions (train + test) ===
+    all_fp = os.path.join(predict_csv_dir, f'all_preds_iter{ratio}_{EF}.csv')
+    if os.path.exists(all_fp):
+        df_all = pd.read_csv(all_fp)
+    
+        # Compute MAE for ALL directly from file
+        mae_all = mean_absolute_error(df_all['Y_true_all'], df_all['Y_pred_all'])
+    
+        # Create scatter: ALL
+        plt.figure(figsize=(6,6))
+        plt.scatter(
+            df_all['Y_true_all'], df_all['Y_pred_all'],
+            alpha=0.6, label=f'All (MAE = {mae_all:.3f} eV)'
+        )
+    
+        # y = x reference line
+        vmin_all = min(df_all['Y_true_all'].min(), df_all['Y_pred_all'].min())
+        vmax_all = max(df_all['Y_true_all'].max(), df_all['Y_pred_all'].max())
+        plt.plot([vmin_all, vmax_all], [vmin_all, vmax_all], 'k--', lw=1)
+    
+        # Labels and title
+        plt.xlabel('True Eads', fontsize=14)
+        plt.ylabel('Predicted Eads', fontsize=14)
+        plt.title(f'Iteration {ratio} ALL Predictions (EF = {EF})', fontsize=16)
+        plt.legend(framealpha=0.8, fontsize=12)
+        plt.tight_layout()
+    
+        # Save figure
+        out_png_all = os.path.join(predict_csv_dir, f'all_preds_iter{ratio}_{EF}.png')
+        plt.savefig(out_png_all, dpi=300)
+        plt.close()
+        print(f"✅ Saved ALL scatter plot with MAE to {out_png_all}")
+    else:
+        print(f"⚠️ ALL predictions file not found: {all_fp}")
+    
+def run_or_plot_active_learning(models, model_name, EF, X, Y, sites,
+                                initial_ratio=0.4, increment=0.05, max_ratio=0.95,
+                                results_dir='results'):
+    """
+    Check for an existing overall CSV file with active learning results.
+    If found, read and plot the results. Otherwise, run the active learning process,
+    save the merged results to one CSV file, and then plot the results.
+    
+    Args:
+        models (dict): Dictionary of models.
+        model_name (str): Name of the model to use.
+        EF: An identifier for saving results.
+        X (np.array): Features dataset.
+        Y (np.array): Target values.
+        sites (np.array or list): Labels corresponding to each sample (e.g., the 'site' column).
+        initial_ratio (float): Initial fraction of data for training.
+        increment (float): Fraction of total data to add each iteration.
+        max_ratio (float): Maximum fraction of data for training.
+        results_dir (str): Directory where results will be saved.
+    """
+    overall_csv_file = os.path.join(results_dir, f'active_learning_metrics_{EF}.csv')
+    
+    if os.path.exists(overall_csv_file):
+        print(f"CSV file found at {overall_csv_file}. Reading and plotting results...")
+        plot_active_learning_from_csv(overall_csv_file, EF)
+    else:
+        print("CSV file not found, running active learning process...")
+        active_learning_one_model(models, model_name, EF, X, Y, sites,
+                                  initial_ratio=initial_ratio, increment=increment, 
+                                  max_ratio=max_ratio, results_dir=results_dir)
+        print("Active learning process completed. Plotting results...")
+        plot_active_learning_from_csv(overall_csv_file, EF)
+
+    # plot_active_predicting_from_csv('results', EF)
+    iterations = [1, 2, 3, 4, 5, 6, 7]
+    for l in iterations:
+        plot_active_predicting_from_csv('results', l, EF)
 ### GA Applilcations
     
 def find_all_rhombuses(atoms, connections, surface_indices, bond_length_threshold):
@@ -1361,50 +1452,6 @@ def convert_sites_triangle_site(sites_list):
     site_dict["hollow_ABC"] = "_".join(str(x) for x in sorted([A, B, C]))
     return site_dict
 
-
-def get_predictions(species: str, EF: int, site: int, base_path: str = "."):
-    """
-    Retrieve prediction values for a given species, EF, and site.
-
-    Parameters
-    ----------
-    species : str
-        Name of the species (e.g., "NH3").
-    EF : int
-        EF value used to identify the CSV file.
-    site : int
-        Site number to extract.
-    base_path : str
-        Path to the folder containing the results directory.
-
-    Returns
-    -------
-    dict
-        Dictionary with site, Y_true_all, Y_pred_all values.
-    """
-    # Construct the file path
-    filename = f"{species}_ads/results/all_preds_iter5_{EF}.csv"
-    filepath = os.path.join(base_path, filename)
-
-    # Read the CSV
-    df = pd.read_csv(filepath)
-
-    # Locate the row for the given site
-    row = df.loc[df["site"] == site]
-
-    if row.empty:
-        raise ValueError(f"Site {site} not found in {filepath}")
-
-    # Extract values
-    result = {
-        "site": int(row["site"].values[0]),
-        "Y_true_all": float(row["Y_true_all"].values[0]),
-        "Y_pred_all": float(row["Y_pred_all"].values[0])
-    }
-
-    return result
-
-
 # ------------------ Modified Helper Function ------------------
 def select_best_site(cluster_path, species, sites, Prop, site_mapping=None):
     """
@@ -1415,7 +1462,7 @@ def select_best_site(cluster_path, species, sites, Prop, site_mapping=None):
         cluster_path (str): Path to the cluster data.
         species (str): The adsorbate species (e.g., "NH3", "NH2", "NH", "N", "H", "N2").
         sites (list): List of candidate site labels (e.g., "top_A", "bridge_A-B", etc.).
-        Prop: Additional properties required by predict_Eads_site. It can be either the EF values or polarizability 
+        Prop: Additional properties required by predict_Eads_site.
         site_mapping (dict, optional): Mapping of candidate labels to numeric strings.
     
     Returns:
@@ -1424,14 +1471,11 @@ def select_best_site(cluster_path, species, sites, Prop, site_mapping=None):
     energy_dict = {}
     for site in sites:
         candidate = str(site_mapping[site]) if (site_mapping is not None and site in site_mapping) else site
-        try: 
-            Eads = get_predictions(species, Prop, site).get('Y_pred_all')
-        except:
-            Eads = predict_Eads_site(cluster_path, species, candidate, Prop)
+        Eads = predict_Eads_site(cluster_path, species, candidate, Prop)
         energy_dict[site] = Eads
-        print(f"{species} at site {site} ({candidate}): Eads = {Eads:.3f} eV")
+        # print(f"{species} at site {site} ({candidate}): Eads = {Eads:.3f} eV")
     best_site = min(energy_dict, key=energy_dict.get)
-    print(f"Best {species} site: {best_site} with Eads = {energy_dict[best_site]:.3f} eV\n")
+    # print(f"Best {species} site: {best_site} with Eads = {energy_dict[best_site]:.3f} eV\n")
     return best_site, energy_dict
 
 # ------------------ Candidate Mappings ------------------
@@ -1585,9 +1629,7 @@ def determine_full_configuration(cluster_path, Prop, sites_list=None):
     Returns a dictionary with keys:
       "NH3", "NH2", "NH", "N", "N2", "H1", "H2", and "H3".
     """
-    # site_mapping = convert_sites(sites_list) if sites_list is not None else None
-    site_mapping = convert_sites_triangle_site(sites_list) if sites_list is not None else None
-    print(site_mapping)
+    site_mapping = convert_sites(sites_list) if sites_list is not None else None
     # print('site_mapping', site_mapping)
     config_NH3 = determine_NH3_configuration(cluster_path, Prop, site_mapping)
     config_NH2 = determine_NH2_configuration(cluster_path, Prop, config_NH3["site"], site_mapping)

@@ -1,28 +1,10 @@
-import os, sys
-import csv
+import os
 import json
 import numpy as np
 import pandas as pd
-import itertools
-import copy
-import math
 import matplotlib.pyplot as plt
-import joblib  # import the joblib library
-from ase import Atoms, io
-import platform
-import re
-import shutil
-import subprocess
-from openpyxl import load_workbook
-import numpy as np
-import pandas as pd
-from scipy.optimize import curve_fit
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-
-
-import numpy as np
-from ase import Atoms
-from ase.io import read, write
+from ase.io import read
+from ase.neighborlist import NeighborList, natural_cutoffs
 
 # Set default font properties
 # plt.rc('font', size=18)  # Default text font size
@@ -32,48 +14,10 @@ from ase.io import read, write
 # plt.rc('ytick', labelsize=16)  # Y tick label font size
 # plt.rc('legend', fontsize=16)  # Legend font size
 # plt.rc('figure', titlesize=20)  # Figure title font size
-plt.rcParams['font.family'] = 'Times New Roman'
-
-
-from matplotlib.patches import Patch
-import matplotlib.patches as patches
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib.collections import PatchCollection
-from matplotlib.colors import ListedColormap
-from matplotlib import cm
-from matplotlib.colors import ListedColormap
-
-
-from scipy.spatial import KDTree, ConvexHull
-from scipy.spatial.transform import Rotation as R
-from scipy.spatial.distance import euclidean
-from scipy.integrate import odeint
-from scipy.integrate import solve_ivp
-from scipy.constants import h,  eV
-
-from ase import Atoms
-from ase.io import read, write
-from ase.neighborlist import NeighborList, natural_cutoffs, neighbor_list
-from ase.io.vasp import read_vasp, write_vasp
-from ase.visualize import view
-
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import cross_val_score, KFold
-from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet, BayesianRidge, LogisticRegression
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.svm import SVR
-from sklearn.metrics import make_scorer, mean_absolute_error, mean_squared_error, r2_score
-from sklearn.neural_network import MLPRegressor
-from sklearn.decomposition import PCA
-from sklearn.cross_decomposition import PLSRegression
-from sklearn.pipeline import make_pipeline
+#plt.rcParams['font.family'] = 'Times New Roman'
 # from xgboost import XGBRegressor
-from scipy.optimize import curve_fit
-from scipy.stats import pearsonr
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-from mkm import * 
+from ase.data import covalent_radii as ase_covalent_radii, atomic_numbers
 
 def round_scientific(number, decimals):
     # Format the number in scientific notation with the desired number of decimals
@@ -175,66 +119,111 @@ def calculate_cluster_size(structure, metal='Ru'):
 
 
 
+# Set the global multiplier for bond cutoff
+GLOBAL_MULT = 1.0  # <-- Set global mult here
+
 def get_connection(atoms_in, metal='Cu', mult=1.0):
-    # atoms_in = read(path + '/POSCAR')
+    from itertools import combinations  # Only need combinations now
+    """
+    Build connection info for metal atoms using direct distance and covalent radii sum as bond criterion.
+    Handles periodic boundary conditions.
+    """
+    if mult is None:
+        mult = GLOBAL_MULT  # Use global mult if not specified
 
-    filtered_atoms = [atom for atom in atoms_in if atom.symbol in [metal]]
-    atoms = Atoms(filtered_atoms)
-    radii = natural_cutoffs(atoms, mult=mult)
-    nl = NeighborList(radii, bothways=True, self_interaction=False)
-    nl.update(atoms)
-    CN_matrix = nl.get_connectivity_matrix(sparse=False)
+    # Filter only metal atoms and keep their indices in the original atoms object
+    metal_indices = [i for i, atom in enumerate(atoms_in) if atom.symbol == metal]
+    atoms = atoms_in[metal_indices]  # ASE Atoms object of only metal atoms
+
+    # Get covalent radii for all metal atoms
+    from ase.data import covalent_radii as ase_covalent_radii, atomic_numbers
+    radii = [ase_covalent_radii[atomic_numbers[metal]]] * len(metal_indices)
+    radii = np.array(radii) * mult
+
+    n = len(metal_indices)
+    CN_matrix = np.zeros((n, n), dtype=int)
+    connections = {i: [] for i in range(n)}
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            d = atoms_in.get_distance(metal_indices[i], metal_indices[j], mic=True)
+            cutoff = radii[i] + radii[j]
+            if d < cutoff:
+                CN_matrix[i, j] = 1
+                CN_matrix[j, i] = 1
+                connections[i].append(j)
+                connections[j].append(i)
+
     CN = CN_matrix.sum(axis=0)
-    exposed_top_sites = [i for i, cn in enumerate(CN) if cn <= 12]       # Exposed top sites (CN <= 9)
+    exposed_top_sites = [i for i, cn in enumerate(CN) if cn < 12]
 
-    connections = {}     # Get the connections of all atoms
-    for i in range(len(atoms)):
-        connections[i] = list(np.where(CN_matrix[i])[0])
-
-    cn_of_connected_atoms = {}      # Request 2: Calculate the CN of the connected atoms
-    for i in range(len(atoms)):
+    cn_of_connected_atoms = {}
+    for i in range(n):
         connected_indices = connections[i]
         cn_of_connected_atoms[i] = [CN[j] for j in connected_indices]
 
     exposed_connections = {i: [j for j in connections[i] if j in exposed_top_sites] for i in exposed_top_sites}
-
     # Bridge sites (pairs of connected exposed top sites)
     bridge_sites = []
+    long_bridge_sites = []
+    checked_pairs = set()
+    checked_long_pairs = set()
     for i in exposed_top_sites:
-        for j in exposed_connections[i]:
-            if i < j:  # Ensure each pair is considered only once
-                # Add constraint: at least one atom has CN <= 10
-                #if CN[i] <= 10 or CN[j] <= 10:
-                bridge_sites.append([i, j])
-
-    # Hollow sites (triplets of closely connected exposed top sites)
+        for j in exposed_top_sites:
+            if i < j and j in exposed_connections.get(i, []) and i in exposed_connections.get(j, []):
+                pair = tuple(sorted([i, j]))
+                if pair not in checked_pairs:
+                    idx_a = metal_indices[i]
+                    idx_b = metal_indices[j]
+                    d_ab = atoms_in.get_distance(idx_a, idx_b, mic=True)
+                    # Get covalent radii for both atoms
+                    r_a = ase_covalent_radii[atomic_numbers[metal]]
+                    r_b = ase_covalent_radii[atomic_numbers[metal]]
+                    radii_sum = r_a + r_b
+                    # Normal bridge: distance <= radii_sum
+                    if d_ab <= radii_sum:
+                        bridge_sites.append(sorted([i, j]))
+                        checked_pairs.add(pair)
+                    # Long bridge: radii_sum < distance <= radii_sum * 1.5
+                    elif radii_sum < d_ab <= radii_sum * 1.5:
+                        if pair not in checked_long_pairs:
+                            long_bridge_sites.append(sorted([i, j]))
+                            checked_long_pairs.add(pair)
+                
+    # Hollow sites (triplets of closely connected exposed top sites forming a closed loop or nearly closed loop)
     hollow_sites = []
-    for i in exposed_top_sites:
-        for j in exposed_connections[i]:
-            for k in exposed_connections[j]:
-                if i < j and j < k and i in exposed_connections[k]:  # Ensure each triplet is considered only once and forms a triangle
-                    # Add constraint: at least one atom has CN <= 9
-                    #if CN[i] <= 9 or CN[j] <= 9 or CN[k] <= 9:
-                    hollow_sites.append([i, j, k])
+    checked_hollow = set()
+    for a, b, c in combinations(exposed_top_sites, 3):
+        idx_a = metal_indices[a]
+        idx_b = metal_indices[b]
+        idx_c = metal_indices[c]
+        d_ab = atoms_in.get_distance(idx_a, idx_b, mic=True)
+        d_bc = atoms_in.get_distance(idx_b, idx_c, mic=True)
+        d_ca = atoms_in.get_distance(idx_c, idx_a, mic=True)
+        dists = [d_ab, d_bc, d_ca]
+        num_short = sum(d < 3.0 for d in dists)
+        num_mid = sum(3.0 <= d < 3.6 for d in dists)
+        # Consider triangles with either all three bonds < 3.0, or two < 3.0 and one < 3.6
+        if (num_short == 3) or (num_short == 2 and num_mid == 1):
+            hollow = tuple(sorted([a, b, c]))
+            if hollow not in checked_hollow:
+                hollow_sites.append(sorted([a, b, c]))
+                checked_hollow.add(hollow)
+
     # Square sites (quartets of connected exposed top sites forming a closed loop)
     square_sites = []
-    for i in exposed_top_sites:
-        for j in exposed_connections[i]:
-            if j <= i:
-                continue
-            for k in exposed_connections[j]:
-                if k in (i, j) or k <= j:
-                    continue
-                for l in exposed_connections[k]:
-                    if l in (i, j, k) or l <= k:
-                        continue
-                    # Check if l connects back to i to form a closed loop
-                    if i in exposed_connections[l]:
-                        square = [i, j, k, l]
-                        # Add constraint: at least one atom has CN <= 9
-                        #if CN[i] <= 9 or CN[j] <= 9 or CN[k] <= 9 or CN[l] <= 9:
-                        square_sites.append(square)
-
+    checked = set()
+    for i, j, k, l in combinations(exposed_top_sites, 4):
+        # Only check one cyclic order (i->j->k->l->i)
+        if (j in exposed_connections[i] and
+            k in exposed_connections[j] and
+            l in exposed_connections[k] and
+            i in exposed_connections[l]):
+            square = tuple(sorted([i, j, k, l]))
+            if square not in checked:
+                square_sites.append(sorted([i, j, k, l]))
+                checked.add(square)
+    print(connections)
     return connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites, square_sites
 
 def number_to_letter(num):
@@ -244,7 +233,7 @@ def number_to_letter(num):
     return chr(ord('a') + num - 1)
 
 
-def get_CN_GA(path, mult=1.0, metal='Ru'):
+def get_CN_GA(path, mult=1.0, metal='Cu'):
     
     '''
     Important: it is the path for the clean cluster. 
@@ -255,13 +244,20 @@ def get_CN_GA(path, mult=1.0, metal='Ru'):
     file_in = os.path.join(path,'POSCAR')
     atoms = read(file_in)
     print(metal)
-    connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites, square_sites  = get_connection(atoms, metal=metal, mult=0.9)
+    connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites, square_sites  = get_connection(atoms, metal=metal)
+
+    # Save exposed_top_sites to a file as a list (1-based indices)
+    exposed_top_sites_list = list(exposed_top_sites)  # already 0-based
+    exposed_top_sites_file = os.path.join(path, 'exposed_top_sites.txt')
+    with open(exposed_top_sites_file, 'w') as f:
+        json.dump(exposed_top_sites_list, f)
     
     def get_one_site_string(site):
         """Obtain the text string representation for single site """
         cn_values = sorted(cn_of_connected_atoms[site])
+        print(cn_values)
         # print(cn_values)
-        if len(cn_values) < 13:
+        if len(cn_values) <= 13:
             cn_values += [0] * (13 - len(cn_values))  # Pad with zeros if less than 12 elements
         else: 
             cn_values += [0] * (13 - 12)  # Pad with zeros if less than 12 elements
