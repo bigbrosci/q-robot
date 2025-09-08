@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import itertools
 import copy
+from pathlib import Path
 import math
 import matplotlib.pyplot as plt
 import joblib  # import the joblib library
@@ -366,23 +367,66 @@ def get_CN_GA(path, mult=0.9, metal='Ru'):
 def func(x, a, b, c):
     return -0.5 * a * x**2 - b * x + c
 
+def surface_site_center(positions: np.ndarray) -> np.ndarray:
+    """
+    Given positions of 1, 2, or 3 atoms (shape: (N, 3) with N in {1,2,3}),
+    return the site coordinate:
+      - N=1: the atom position
+      - N=2: midpoint
+      - N=3: triangle centroid (simple average of vertices)
+    """
+    if positions.shape[0] not in (1, 2, 3):
+        raise ValueError("Provide 1, 2, or 3 surface atom indices.")
+    return positions.mean(axis=0)
+
+def angle_com_to_surface_xy(atoms: Atoms, surf_indices) -> float:
+    """
+    Parameters
+    ----------
+    atoms : ase.Atoms
+        Your Ru45 cluster (or any cluster); masses must be set for COM (ASE sets by symbol).
+    surf_indices : int | list[int] | tuple[int, ...]
+        1, 2, or 3 indices of surface atoms defining the surface site.
+
+    Returns
+    -------
+    angle_deg : float
+        Angle in degrees between the vector (COM -> surface_site) and the xy-plane
+        that passes through the COM (i.e., 0° = parallel to plane, 90° = straight up/down).
+    """
+    # 1) Center of mass of the cluster
+    com = atoms.get_center_of_mass()  # (3,)
+
+    # 2) Surface-site position from indices
+    if isinstance(surf_indices, (int, np.integer)):
+        idx_list = [int(surf_indices) -1]
+    else:
+        idx_list = [int(i) -1 for i in surf_indices]
+
+
+    site = atoms.get_positions()[idx_list].mean(axis=0)
+    v = site - com
+    r_xy = np.linalg.norm(v[:2])          # 与平面的投影长度
+    angle_rad = np.arctan2(v[2], r_xy)    # 保留符号：vz>0 正，vz<0 负
+    return float(np.degrees(angle_rad))
+
 
 def get_dipole_polarization(GA_matrix, fill_nans_with_fit=True, verbose=True):
-    def func(x, a, b, c):
-        return -0.5 * a * x**2 - b * x + c
 
     x_values = np.array([-0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6])
     eads_cols = ['E_ads_' + i for i in ["-0.6", "-0.4", "-0.2", "0.0", "0.2", "0.4", "0.6"] ]
     site_col = 'Site' if 'Site' in GA_matrix.columns else 'site'
+    angle_col = 'angle'
 
     results_list = []
     GA_matrix = GA_matrix.copy()  # 避免修改原始 DataFrame
 
     for idx, row in GA_matrix.iterrows():
         site = row[site_col]
+        angle = row[angle_col]
         y_values_orig = row[eads_cols].values.astype(float)
         valid_mask = ~np.isnan(y_values_orig)
-        x_fit = x_values[valid_mask]
+        x_fit = x_values[valid_mask] * math.sin(math.radians(angle))
         y_fit = y_values_orig[valid_mask]
 
         if len(x_fit) < 3:
@@ -455,8 +499,6 @@ def get_dipole_polarization(GA_matrix, fill_nans_with_fit=True, verbose=True):
     return results_df#, GA_matrix
 
 
-
-
 def load_ga_data(cluster_path):
     """
     Loads the GA dictionary and the groups list from files.
@@ -484,19 +526,27 @@ def load_ga_data(cluster_path):
 def get_full_GA_matrix(cluster_path):
     """
     Generate the GA (Group Additivity) matrix for all the surface sites
+    Alos, we add the angle information of surface sites to the GA matrix.
     """
     GA_dict, groups = load_ga_data(cluster_path)
+    atoms  = read(cluster_path + '/POSCAR')
     # Prepare header for the GA matrix DataFrame
-    header = ['site'] + groups
+    header = ['site'] + groups + ['angle']
     GA_matrix = []
 
-    for key,values in GA_dict.items():
+    for key, values in GA_dict.items():  # key is the index of the atom in the POSCAR, 1-based
         groups_geo = values
         row = [key]
         # Create the GA matrix row: first column is the site label, then counts for each group
         for group in groups:
             count = groups_geo.count(group)
             row.append(count)
+            
+        ## Obtain The angle (A) between the mass center-surface atom vector and the xy-plane    
+        indices = [int(i) for i in key.split('_')]
+        angle = angle_com_to_surface_xy(atoms, indices)
+        row.append(angle)
+        
         GA_matrix.append(row)
 
     # Create a DataFrame from the GA matrix
@@ -513,6 +563,9 @@ def get_full_GA_matrix(cluster_path):
 
 
 def generate_GA_matrix_species(cluster_path, list_EF):
+    """  
+    This function will update the adsorption energies to the GA_matrix file.
+    """
     
     ga_matrix_file = os.path.join(cluster_path, 'GA_matrix_full.csv')
     print("Reading from:", ga_matrix_file)
@@ -567,12 +620,8 @@ def generate_GA_matrix_species(cluster_path, list_EF):
             # Add the computed energy column to the GA matrix DataFrame.
             # (Assumes the row order of df and df_GA is the same.)
         GA_matrix_species[f'E_ads_{ef_val}'] = eads_ef
-    # print("Original GA_matrix_full columns:")
-    # print(GA_matrix_full.columns.tolist())
-    
-    # print("\nModified GA_matrix_species columns:")
-    # print(GA_matrix_species.columns.tolist())
-    #     # Save the GA matrix to CSV
+
+    # Save the GA matrix to CSV
     output_csv = "./GA_matrix.csv"
     
     GA_matrix_species.to_csv(output_csv, index=False)
@@ -658,7 +707,7 @@ def get_GA_matrix(cluster_path, EF, Taylor=False):
     if Taylor: 
         prop_list = ["E_ads_-0.6", "E_ads_-0.4", "E_ads_-0.2", "E_ads_0.0", "E_ads_0.2", "E_ads_0.4", "E_ads_0.6", "polarizability", "dipole", "c"]
     else:
-        prop_list = ["E_ads_-0.6", "E_ads_-0.4", "E_ads_-0.2", "E_ads_0.0", "E_ads_0.2", "E_ads_0.4", "E_ads_0.6"]
+        prop_list = ["E_ads_-0.6", "E_ads_-0.4", "E_ads_-0.2", "E_ads_0.0", "E_ads_0.2", "E_ads_0.4", "E_ads_0.6", "polarizability", "dipole", "c"]
     
     # Extract Y values (adsorption energies)
     if EF not in  ["polarizability", "dipole", "c"]:
@@ -675,7 +724,7 @@ def get_GA_matrix(cluster_path, EF, Taylor=False):
     df_features = df_matrix.drop(columns=cols_to_drop)
     X = df_features.values
     n_group = df_features.shape[1]
-    
+
     return df_matrix, X, Y, n_group
 
 
@@ -1043,11 +1092,24 @@ def active_learning_one_model(models, model_name, EF, X, Y, sites,
     """
 
 
-    # Step 1: Remove NaNs before anything else
-    valid_mask = ~np.isnan(Y)
+    # Ensure arrays
+    X = np.asarray(X)
+    Y = np.asarray(Y)
+    
+    # If Y might be (N,1), flatten it
+    Y = Y.ravel()
+    
+    # Build a row-wise validity mask
+    valid_mask = np.all(np.isfinite(X), axis=1) & np.isfinite(Y)
+    
+    # Apply the mask consistently
     X = X[valid_mask]
     Y = Y[valid_mask]
-    sites = np.array(sites)[valid_mask]
+    sites = np.asarray(sites)[valid_mask]
+
+
+    if EF == 0:
+        X = X[:, :-1]   # remove last column
 
     total_samples = len(X)
     idx = np.arange(total_samples)
@@ -1350,6 +1412,7 @@ def convert_sites_triangle_site(sites_list):
     if len(sites_list) != 3:
         raise ValueError("sites_list must contain exactly three elements corresponding to A, B, C.")
     sites_list = [i + 1 for i in sites_list]
+    print(sites_list)
     A, B, C = sites_list
     site_dict = {}
     site_dict["top_A"] = str(A)
@@ -1362,51 +1425,52 @@ def convert_sites_triangle_site(sites_list):
     return site_dict
 
 
-def get_predictions(species: str, EF: int, site: int, base_path: str = "."):
-    """
-    Retrieve prediction values for a given species, EF, and site.
+# def get_predictions(species: str, EF: int, site: int, base_path: str = "."):
+#     """
+#     Retrieve prediction values for a given species, EF, and site.
 
-    Parameters
-    ----------
-    species : str
-        Name of the species (e.g., "NH3").
-    EF : int
-        EF value used to identify the CSV file.
-    site : int
-        Site number to extract.
-    base_path : str
-        Path to the folder containing the results directory.
+#     Parameters
+#     ----------
+#     species : str
+#         Name of the species (e.g., "NH3").
+#     EF : int
+#         EF value used to identify the CSV file.
+#     site : int
+#         Site number to extract.
+#     base_path : str
+#         Path to the folder containing the results directory.
 
-    Returns
-    -------
-    dict
-        Dictionary with site, Y_true_all, Y_pred_all values.
-    """
-    # Construct the file path
-    filename = f"{species}_ads/results/all_preds_iter5_{EF}.csv"
-    filepath = os.path.join(base_path, filename)
+#     Returns
+#     -------
+#     dict
+#         Dictionary with site, Y_true_all, Y_pred_all values.
+#     """
+#     # Construct the file path
+#     data_path = '/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_sim_2025_08_20'
+#     filename = f"{species}_ads/results/all_preds_iter5_{EF}.csv"
+#     filepath = os.path.join(data_path, filename)
 
-    # Read the CSV
-    df = pd.read_csv(filepath)
+#     # Read the CSV
+#     df = pd.read_csv(filepath)
 
-    # Locate the row for the given site
-    row = df.loc[df["site"] == site]
+#     # Locate the row for the given site
+#     row = df.loc[df["site"] == site]
 
-    if row.empty:
-        raise ValueError(f"Site {site} not found in {filepath}")
+#     if row.empty:
+#         raise ValueError(f"Site {site} not found in {filepath}")
 
-    # Extract values
-    result = {
-        "site": int(row["site"].values[0]),
-        "Y_true_all": float(row["Y_true_all"].values[0]),
-        "Y_pred_all": float(row["Y_pred_all"].values[0])
-    }
+#     # Extract values
+#     result = {
+#         "site": int(row["site"].values[0]),
+#         "Y_true_all": float(row["Y_true_all"].values[0]),
+#         "Y_pred_all": float(row["Y_pred_all"].values[0])
+#     }
 
-    return result
+#     return result
 
 
 # ------------------ Modified Helper Function ------------------
-def select_best_site(cluster_path, species, sites, Prop, site_mapping=None):
+def select_best_site(cluster_path, species, sites, Prop, site_mapping):
     """
     Evaluate the predicted adsorption energy for a given species at each candidate site.
     If site_mapping is provided, convert the candidate label to its numeric string.
@@ -1422,10 +1486,18 @@ def select_best_site(cluster_path, species, sites, Prop, site_mapping=None):
         tuple: (best_site, energy_dict) where energy_dict is keyed by the candidate (symbolic label).
     """
     energy_dict = {}
+    
     for site in sites:
-        candidate = str(site_mapping[site]) if (site_mapping is not None and site in site_mapping) else site
-        try: 
-            Eads = get_predictions(species, Prop, site).get('Y_pred_all')
+        candidate = site_mapping[site] if (site_mapping is not None and site in site_mapping) else site
+        data_path = Path("/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_sim_2025_08_20")
+        filename = f"{species}_ads/results/all_preds_iter5_{Prop}.csv"
+        filepath = os.path.join(data_path, filename)
+        df = pd.read_csv(filepath)
+        result_dict = df.set_index("site")[["Y_true_all", "Y_pred_all"]].T.to_dict("list")
+        result_dict = {str(k): v for k, v in result_dict.items()}
+        try:
+            Eads = float(result_dict[candidate][0])
+        
         except:
             Eads = predict_Eads_site(cluster_path, species, candidate, Prop)
         energy_dict[site] = Eads
@@ -1516,7 +1588,6 @@ def determine_NH3_configuration(cluster_path, Prop, site_mapping=None):
 # Step 2: NH₃ → NH₂ + H (H determined by NH2)
 def determine_NH2_configuration(cluster_path, Prop, best_NH3_site, site_mapping=None):
     nh2_candidates = get_nh2_candidates(best_NH3_site)
-    # print('Good1',nh2_candidates )
     best_NH2_site, energies_NH2 = select_best_site(cluster_path, "NH2", nh2_candidates, Prop, site_mapping)
     candidate_H_sites = nh2_to_h_candidates_step2.get(best_NH2_site, [])
     if candidate_H_sites:
@@ -1570,44 +1641,43 @@ def determine_N2_configuration(cluster_path, Prop, site_mapping=None):
     return {"site": best_N2_site, "energy": energies_N2[best_N2_site]}
 
 # ------------------ Top-Level Full Configuration ------------------
-def determine_full_configuration(cluster_path, Prop, sites_list=None):
-    """
-    Determine the full stable configuration for the reaction chain and return a dictionary
-    where each species is mapped to a tuple (site, energy):
-      1. NH3 → NH2 + H      (H determined by NH2)
-      2. NH2 → NH + H       (H determined by NH)
-      3. NH  → N + H        (H determined by N)
-      4. Also determine the N2 adsorption site.
+# def determine_full_configuration(cluster_path, Prop, sites_list=None):
+#     """
+#     Determine the full stable configuration for the reaction chain and return a dictionary
+#     where each species is mapped to a tuple (site, energy):
+#       1. NH3 → NH2 + H      (H determined by NH2)
+#       2. NH2 → NH + H       (H determined by NH)
+#       3. NH  → N + H        (H determined by N)
+#       4. Also determine the N2 adsorption site.
     
-    If sites_list is provided (a list of four numbers for atoms A, B, C, D in clockwise order),
-    it is converted to a mapping for energy predictions.
+#     If sites_list is provided (a list of four numbers for atoms A, B, C, D in clockwise order),
+#     it is converted to a mapping for energy predictions.
     
-    Returns a dictionary with keys:
-      "NH3", "NH2", "NH", "N", "N2", "H1", "H2", and "H3".
-    """
-    # site_mapping = convert_sites(sites_list) if sites_list is not None else None
-    site_mapping = convert_sites_triangle_site(sites_list) if sites_list is not None else None
-    print(site_mapping)
-    # print('site_mapping', site_mapping)
-    config_NH3 = determine_NH3_configuration(cluster_path, Prop, site_mapping)
-    config_NH2 = determine_NH2_configuration(cluster_path, Prop, config_NH3["site"], site_mapping)
-    config_NH = determine_NH_configuration(cluster_path, Prop, config_NH2["NH2"]["site"], site_mapping)
-    config_N = determine_N_configuration(cluster_path, Prop, config_NH["NH"]["site"], site_mapping)
-    config_N2 = determine_N2_configuration(cluster_path, Prop, site_mapping)
+#     Returns a dictionary with keys:
+#       "NH3", "NH2", "NH", "N", "N2", "H1", "H2", and "H3".
+#     """
+#     # site_mapping = convert_sites(sites_list) if sites_list is not None else None
+#     site_mapping = convert_sites_triangle_site(sites_list) if sites_list is not None else None
+#     print(site_mapping)
+#     # print('site_mapping', site_mapping)
+#     config_NH3 = determine_NH3_configuration(cluster_path, Prop, site_mapping)
+#     config_NH2 = determine_NH2_configuration(cluster_path, Prop, config_NH3["site"], site_mapping)
+#     config_NH = determine_NH_configuration(cluster_path, Prop, config_NH2["NH2"]["site"], site_mapping)
+#     config_N = determine_N_configuration(cluster_path, Prop, config_NH["NH"]["site"], site_mapping)
+#     config_N2 = determine_N2_configuration(cluster_path, Prop, site_mapping)
 
-    final_config = {
-        "NH3": (config_NH3["site"], config_NH3["energy"]),
-        "NH2": (config_NH2["NH2"]["site"], config_NH2["NH2"]["energy"]),
-        "NH":  (config_NH["NH"]["site"], config_NH["NH"]["energy"]),
-        "N":   (config_N["N"]["site"], config_N["N"]["energy"]),
-        "N2":  (config_N2["site"], config_N2["energy"]),
-        "H1":  (config_NH2["H1"]["site"], config_NH2["H1"]["energy"]),
-        "H2":  (config_NH["H2"]["site"], config_NH["H2"]["energy"]),
-        "H3":  (config_N["H3"]["site"], config_N["H3"]["energy"])
-    }
+#     final_config = {
+#         "NH3": (config_NH3["site"], config_NH3["energy"]),
+#         "NH2": (config_NH2["NH2"]["site"], config_NH2["NH2"]["energy"]),
+#         "NH":  (config_NH["NH"]["site"], config_NH["NH"]["energy"]),
+#         "N":   (config_N["N"]["site"], config_N["N"]["energy"]),
+#         "N2":  (config_N2["site"], config_N2["energy"]),
+#         "H1":  (config_NH2["H1"]["site"], config_NH2["H1"]["energy"]),
+#         "H2":  (config_NH["H2"]["site"], config_NH["H2"]["energy"]),
+#         "H3":  (config_N["H3"]["site"], config_N["H3"]["energy"])
+#     }
     
-    return final_config
-
+#     return final_config
 
 ### For triangle sites 
 # Step 1: NH₃ Adsorption
@@ -1617,24 +1687,28 @@ nh_candidates_tri = ["top_A", "top_B", "top_C", "bridge_A-B", "bridge_B-C", "bri
 n_candidates_tri =  nh_candidates_tri 
 h_candidates_tri =  nh_candidates_tri 
 n2_candidates_tri = nh_candidates_tri 
-def determine_NH3_configuration_tri(cluster_path, Prop, site_mapping=None):
+
+def determine_NH3_configuration_tri(cluster_path, Prop, site_mapping):
     best_NH3_site, energies = select_best_site(cluster_path, "NH3", nh3_candidates_tri, Prop, site_mapping)
     return {"site": best_NH3_site, "energy": energies[best_NH3_site]}
-def determine_NH2_configuration_tri(cluster_path, Prop, site_mapping=None):
+def determine_NH2_configuration_tri(cluster_path, Prop, site_mapping):
     best_NH2_site, energies_NH2 = select_best_site(cluster_path, "NH2", nh2_candidates_tri, Prop, site_mapping)
     return {"NH2": {"site": best_NH2_site, "energy": energies_NH2[best_NH2_site]}}
-def determine_H_configuration_tri(cluster_path, Prop, site_mapping=None):    
+def determine_H_configuration_tri(cluster_path, Prop, site_mapping):    
     best_H_site, energies_H = select_best_site(cluster_path, "H", h_candidates_tri, Prop, site_mapping)
     return {"H": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}}
-def determine_NH_configuration_tri(cluster_path, Prop, site_mapping=None):
+def determine_NH_configuration_tri(cluster_path, Prop, site_mapping):
     best_NH_site, energies_NH = select_best_site(cluster_path, "NH", nh_candidates_tri, Prop, site_mapping)
     return {"NH": {"site": best_NH_site, "energy": energies_NH[best_NH_site]}}
-def determine_N_configuration_tri(cluster_path, Prop, site_mapping=None):
+def determine_N_configuration_tri(cluster_path, Prop, site_mapping):
     best_N_site, energies_N = select_best_site(cluster_path, "N", n_candidates_tri, Prop, site_mapping)
     return {"N": {"site": best_N_site, "energy": energies_N.get(best_N_site, None)}}
-def determine_N2_configuration_tri(cluster_path, Prop, site_mapping=None):
+def determine_N2_configuration_tri(cluster_path, Prop, site_mapping):
     best_N2_site, energies_N2 = select_best_site(cluster_path, "N2", n2_candidates_tri, Prop, site_mapping)
     return {"site": best_N2_site, "energy": energies_N2[best_N2_site]}
+
+
+
 
 def determine_full_configuration_triangle_site(cluster_path, Prop, sites_list=None):
     """
@@ -3052,7 +3126,7 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     E_NH2 = adsorption_data['NH2'][2]
     E_NH = adsorption_data['NH'][2]
     E_N  = adsorption_data['N'][2]
-    E_N_N = 2 * adsorption_data['N'][2] - E_slab + 0.5
+    E_N_N = 2 * adsorption_data['N'][2] - E_slab  #+ 0.5
     E_N2 = adsorption_data['N2'][2] 
     try:
         E_H1  = adsorption_data['H1'][2]  
