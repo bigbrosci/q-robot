@@ -20,6 +20,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from ase import Atoms
 from ase.io import read, write
+from matplotlib.ticker import LinearLocator, FormatStrFormatter
+
 
 # Set default font properties
 # plt.rc('font', size=18)  # Default text font size
@@ -987,7 +989,6 @@ def plot_active_learning_from_csv(EF, results_dir='results'):
     plt.close()
     print(f"✅ Plot saved to {out_png}")
 
-    
 def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
     """
     Read training and testing prediction CSVs for a given iteration (ratio) and EF,
@@ -1011,31 +1012,43 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
     mae_train = mean_absolute_error(df_train['Y_true'], df_train['Y_pred'])
     mae_test  = mean_absolute_error(df_test['Y_true'],  df_test['Y_pred'])
 
-    # Create scatter plot
-    plt.figure(figsize=(6,6))
-    plt.scatter(df_train['Y_true'], df_train['Y_pred'],
-                color='tab:blue', label=f'Train (MAE = {mae_train:.3f} eV)', alpha=0.6, linestyle='--')
-    plt.scatter(df_test['Y_true'], df_test['Y_pred'],
-                color='tab:red',  label=f'Test  (MAE = {mae_test:.3f} eV)',  alpha=0.6)
+    # Create figure/axes
+    fig, ax = plt.subplots(figsize=(6, 6))
 
-    # y = x reference line
-    all_vals = pd.concat([df_train[['Y_true','Y_pred']],
-                          df_test [['Y_true','Y_pred']]]).values.flatten()
-    vmin, vmax = all_vals.min(), all_vals.max()
-    plt.plot([vmin, vmax], [vmin, vmax], 'k--', lw=1)
+    # Scatter (圆点)
+    ax.scatter(df_train['Y_true'], df_train['Y_pred'],
+               color='tab:blue', label=f'Train (MAE = {mae_train:.3f} eV)', alpha=0.6)
+    ax.scatter(df_test['Y_true'], df_test['Y_pred'],
+               color='tab:red',  label=f'Test  (MAE = {mae_test:.3f} eV)',  alpha=0.6)
 
-    # # Annotate MAE values
-    # text_x = vmin + 0.85*(vmax-vmin)
-    # text_y = vmax - 0.85*(vmax-vmin)
-    # plt.text(text_x, text_y,
-    #          f"MAE_train: {mae_train:.3f} eV\nMAE_test:  {mae_test:.3f} eV",
-    #          fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+    # y = x reference line & limits
+    all_vals = np.concatenate([
+        df_train[['Y_true','Y_pred']].values.ravel(),
+        df_test [['Y_true','Y_pred']].values.ravel()
+    ])
+    vmin, vmax = np.min(all_vals), np.max(all_vals)
+    if vmin == vmax:
+        eps = 1e-6
+        vmin -= eps; vmax += eps
+    ax.plot([vmin, vmax], [vmin, vmax], 'k--', lw=1)
+    ax.set_xlim(vmin, vmax)
+    ax.set_ylim(vmin, vmax)
+
+    # === 关键：每个轴固定 5 个主刻度 ===
+    ax.xaxis.set_major_locator(LinearLocator(5))  # exactly 5 ticks including ends
+    ax.yaxis.set_major_locator(LinearLocator(5))
+    ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
     # Labels and title
-    plt.xlabel('True Eads',  fontsize=14)
-    plt.ylabel('Predicted Eads', fontsize=14)
-    plt.title(f'Iteration {ratio} Predictions (EF = {EF})', fontsize=16)
-    plt.legend(framealpha=0.8, fontsize=12)
+    ax.set_xlabel('DFT Eads',  fontsize=20)
+    ax.set_ylabel('Predicted Eads', fontsize=20)
+    # ax.set_title(f'Iteration {ratio} Predictions (EF = {EF})', fontsize=16)
+    ax.legend(framealpha=0.8, fontsize=14)
+    ax.tick_params(axis='both', which='major', labelsize=18)  # major ticks
+
+    ax.set_aspect('equal', adjustable='box')  # 可选：图形上 y=x 视觉上为 45°
+
     plt.tight_layout()
 
     # Save figure
@@ -1043,6 +1056,62 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
     plt.savefig(out_png, dpi=300)
     plt.close()
     print(f"✅ Saved scatter plot with MAEs to {out_png}")
+    
+# def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
+#     """
+#     Read training and testing prediction CSVs for a given iteration (ratio) and EF,
+#     plot true vs. predicted scatter for both sets, annotate with MAEs calculated
+#     directly from the data, and save the figure.
+
+#     Args:
+#         predict_csv_dir (str): Directory containing the CSVs.
+#         ratio (int or str): The iteration number (used in the filename).
+#         EF (float or str): The EF value (used in the filename and title).
+#     """
+#     # Paths to prediction CSVs
+#     train_fp = os.path.join(predict_csv_dir, f'train_preds_iter{ratio}_{EF}.csv')
+#     test_fp  = os.path.join(predict_csv_dir, f'test_preds_iter{ratio}_{EF}.csv')
+
+#     # Read data
+#     df_train = pd.read_csv(train_fp)
+#     df_test  = pd.read_csv(test_fp)
+
+#     # Compute MAEs directly
+#     mae_train = mean_absolute_error(df_train['Y_true'], df_train['Y_pred'])
+#     mae_test  = mean_absolute_error(df_test['Y_true'],  df_test['Y_pred'])
+
+#     # Create scatter plot
+#     plt.figure(figsize=(6,6))
+#     plt.scatter(df_train['Y_true'], df_train['Y_pred'],
+#                 color='tab:blue', label=f'Train (MAE = {mae_train:.3f} eV)', alpha=0.6, linestyle='--')
+#     plt.scatter(df_test['Y_true'], df_test['Y_pred'],
+#                 color='tab:red',  label=f'Test  (MAE = {mae_test:.3f} eV)',  alpha=0.6)
+
+#     # y = x reference line
+#     all_vals = pd.concat([df_train[['Y_true','Y_pred']],
+#                           df_test [['Y_true','Y_pred']]]).values.flatten()
+#     vmin, vmax = all_vals.min(), all_vals.max()
+#     plt.plot([vmin, vmax], [vmin, vmax], 'k--', lw=1)
+
+#     # # Annotate MAE values
+#     # text_x = vmin + 0.85*(vmax-vmin)
+#     # text_y = vmax - 0.85*(vmax-vmin)
+#     # plt.text(text_x, text_y,
+#     #          f"MAE_train: {mae_train:.3f} eV\nMAE_test:  {mae_test:.3f} eV",
+#     #          fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
+
+#     # Labels and title
+#     plt.xlabel('True Eads',  fontsize=14)
+#     plt.ylabel('Predicted Eads', fontsize=14)
+#     plt.title(f'Iteration {ratio} Predictions (EF = {EF})', fontsize=16)
+#     plt.legend(framealpha=0.8, fontsize=12)
+#     plt.tight_layout()
+
+#     # Save figure
+#     out_png = os.path.join(predict_csv_dir, f'preds_iter{ratio}_{EF}.png')
+#     plt.savefig(out_png, dpi=300)
+#     plt.close()
+#     print(f"✅ Saved scatter plot with MAEs to {out_png}")
     
     # === Additional figure: ALL predictions (train + test) ===
     all_fp = os.path.join(predict_csv_dir, f'all_preds_iter{ratio}_{EF}.csv')
@@ -3126,7 +3195,7 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     E_NH2 = adsorption_data['NH2'][2]
     E_NH = adsorption_data['NH'][2]
     E_N  = adsorption_data['N'][2]
-    E_N_N = 2 * adsorption_data['N'][2] - E_slab  #+ 0.5
+    E_N_N = 2 * adsorption_data['N'][2] - E_slab 
     E_N2 = adsorption_data['N2'][2] 
     try:
         E_H1  = adsorption_data['H1'][2]  
@@ -3154,25 +3223,23 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     reaction_energy_1 = E_NH2 + E_H - E_NH3 - E_slab
     reaction_energy_2 = E_NH  + E_H - E_NH2 - E_slab
     reaction_energy_3 = E_N   + E_H - E_NH  - E_slab
-    reaction_energy_4 = E_N2  - E_N_N
+    EN_N_gas = E_slab + gas_dict['N2'] - E_N_N 
 
     # Ea = a * ΔE + b
     Ea_params = [
-        (0.42, 1.36),  # TS1_NH3(T)
-        (0.88, 0.82),  # TS1_NH2(T)
-        (0.47, 0.81),  # TS1_NH(T)
-        (0.87, 2.10)   # TS4_N2(T)
+        (0.40, 1.36),  # TS1_NH3(T)
+        (0.86, 0.82),  # TS2_NH2(T)
+        (0.54, 0.85),  # TS3_NH(T)
+        (0.72, 1.35)   # TS4_N2(T)
     ]
     
     Ea1 = Ea_params[0][0] * reaction_energy_1 + Ea_params[0][1]
     Ea2 = Ea_params[1][0] * reaction_energy_2 + Ea_params[1][1]
     Ea3 = Ea_params[2][0] * reaction_energy_3 + Ea_params[2][1]
-    Ea4 = Ea_params[3][0] * reaction_energy_4 + Ea_params[3][1]
+    Ea4 = Ea_params[3][0] * EN_N_gas + Ea_params[3][1]
 
     Ea_list = [Ea1, Ea2, Ea3, Ea4]
-    # print('DE1', reaction_energy_1)
-    # print('Ea_list', Ea_list)
-    # 
+
     Ea_list = [max(0.01, ea) for ea in Ea_list]
     
     # print('Ea', Ea_list)
@@ -3218,7 +3285,8 @@ def build_refdict_and_plot_rc_double_NH3(ef_value: float, adsorption_data: dict,
     ΔE2 = (E_NH2_ads + E_H_ads - E_slab) - E_NH3_ads
     ΔE3 = (E_NH_ads + E_H_ads - E_slab) - E_NH2_ads
     ΔE4 = (E_N_ads + E_H_ads - E_slab) - E_NH_ads
-    ΔE5 = (E_N2_ads + E_slab) - 2 * E_N_ads
+    # ΔE5 = (E_N2_ads + E_slab) - 2 * E_N_ads
+    ΔE5 = 2 * E_N_ads - 0.5 
     ΔE6 = -adsorption_data['N2'][1]          # full N2 desorption
     try:
         ΔE7 = -adsorption_data['H1'][1] * 3      # 6H* → 3 H2(g)
@@ -3226,7 +3294,7 @@ def build_refdict_and_plot_rc_double_NH3(ef_value: float, adsorption_data: dict,
         ΔE7 = -adsorption_data['H'][1] * 3
 
     # Barriers
-    Ea_param = [(0.42, 1.36), (0.88, 0.82), (0.47, 0.81), (0.87, 2.10)]
+    Ea_param = [(0.42, 1.36), (0.88, 0.82), (0.47, 0.81), (0.82, 1.27)]
     Ea1 = max(0.01, Ea_param[0][0] * ΔE2 + Ea_param[0][1])
     Ea2 = max(0.01, Ea_param[1][0] * ΔE3 + Ea_param[1][1])
     Ea3 = max(0.01, Ea_param[2][0] * ΔE4 + Ea_param[2][1])
