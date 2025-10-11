@@ -1041,10 +1041,10 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
     ax.set_xlim(vmin-0.2, vmax+0.2)
     ax.set_ylim(vmin-0.2, vmax+0.2)
     
-    #For H_ads
-    # ax.plot([-1, 0.5], [-1, 0.5], 'k--', lw=1)
-    # ax.set_xlim(-1., 0.5)
-    # ax.set_ylim(-1., 0.5)
+    # #For N_ads
+    # ax.plot([-1.1, 0.7], [-1.1, 0.7], 'k--', lw=1)
+    # ax.set_xlim(-1.1, 0.7)
+    # ax.set_ylim(-1.1, 0.7)
 
     # === 关键：每个轴固定 5 个主刻度 ===
     ax.xaxis.set_major_locator(LinearLocator(5))  # exactly 5 ticks including ends
@@ -1053,8 +1053,8 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
     ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
     # Labels and title
-    ax.set_xlabel('DFT Eads',  fontsize=20)
-    ax.set_ylabel('Predicted Eads', fontsize=20)
+    ax.set_xlabel('Eads(DFT) /eV',  fontsize=20)
+    ax.set_ylabel('Eads(GA) / eV', fontsize=20)
     # ax.set_title(f'Iteration {ratio} Predictions (EF = {EF})', fontsize=16)
     ax.legend(framealpha=0.8, fontsize=14)
     ax.tick_params(axis='both', which='major', labelsize=18)  # major ticks
@@ -1146,9 +1146,10 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
         plt.plot([vmin_all, vmax_all], [vmin_all, vmax_all], 'k--', lw=1)
     
         # Labels and title
-        plt.xlabel('True Eads', fontsize=14)
-        plt.ylabel('Predicted Eads', fontsize=14)
-        plt.title(f'Iteration {ratio} ALL Predictions (EF = {EF})', fontsize=16)
+        plt.xlabel('Eads (DFT) / eV', fontsize=22)
+        plt.ylabel('Eads (GA) / eV', fontsize=22)
+        plt.tick_params(axis='both', which='major', labelsize=20)
+        # plt.title(f'Iteration {ratio} ALL Predictions (EF = {EF})', fontsize=16)
         plt.legend(framealpha=0.8, fontsize=12)
         plt.tight_layout()
     
@@ -1370,7 +1371,7 @@ def predict_Eads_site(cluster_path, species, site, Prop):
     Prop values: -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, polarizability, dipole, all are strings.
     '''
     predict_matrix =  get_matrix_to_be_predicted(cluster_path, site)
-    print(predict_matrix.shape)
+    #print(predict_matrix.shape)
     pkl_file = os.path.join(cluster_path,f'{species}_GA_{Prop}.pkl')
     GA_model = joblib.load(pkl_file)  
     E_species_ef = GA_model.predict(predict_matrix)[0]
@@ -1494,7 +1495,7 @@ def convert_sites_triangle_site(sites_list):
     if len(sites_list) != 3:
         raise ValueError("sites_list must contain exactly three elements corresponding to A, B, C.")
     sites_list = [i + 1 for i in sites_list]
-    print(sites_list)
+    # print(sites_list)
     A, B, C = sites_list
     site_dict = {}
     site_dict["top_A"] = str(A)
@@ -2085,7 +2086,7 @@ def is_exposed_triangle(atoms, triangle_sites, height=2.2):
     atom_count_top, atom_count_bottom = count_atoms_in_prism(atoms, triangle_sites, height)
 
     if atom_count_top > 0 and atom_count_bottom > 0:
-        print(atom_count_top, atom_count_bottom)
+        # print(atom_count_top, atom_count_bottom)
         return False 
     return True 
 
@@ -3197,28 +3198,28 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     reaction_energy_1 = E_NH2 + (-6.76668776)/2 - E_NH3 
     reaction_energy_2 = E_NH  + (-6.76668776)/2 - E_NH2  
     reaction_energy_3 = E_N   + (-6.76668776)/2 - E_NH  
-    EN_N_gas = E_slab + gas_dict['N2'] - E_N_N 
+    EN_N_gas = E_slab + gas_dict['N2'] - E_N_N - 0.5
 
     # Ea = a * ΔE + b
-    Ea_params = [
-        (0.40, 1.36),  # TS1_NH3(T)
-        (0.86, 0.82),  # TS2_NH2(T)
-        (0.54, 0.85),  # TS3_NH(T)
-        (0.72, 1.35)   # TS4_N2(T)
-    ]
+    # Ea_params = [
+    #     (0.40, 1.36),  # TS1_NH3(T)
+    #     (0.86, 0.82),  # TS2_NH2(T)
+    #     (0.54, 0.85),  # TS3_NH(T)
+    #     (0.72, 1.35)   # TS4_N2(T)
+    # ]
     
     #Ea = [(a1,b1), (a2,b2),] a1: NH3-NH2, a2: NH2-NH, a3: NH-N, a4: N_N-N2
-    Ea_param_0 =    [(0.42, 0.91), (0.85, 0.75), (0.57, 0.78), (0.82, 1.27)]
-    Ea_param_N0_6 = [(0.53, 0.84), (0.89, 0.72), (0.63, 0.73), (0.82, 1.27)]
-    Ea_param_P0_6 = [(0.57, 0.92), (0.79, 0.77), (0.59, 0.78), (0.82, 1.27)]
+    Ea_params =    [(0.52, 0.89), (0.85, 0.74), (0.62, 0.75), (0.62, 1.39)]
+    # Ea_param_N0_6 = [(0.53, 0.84), (0.89, 0.72), (0.63, 0.73), (0.82, 1.27)]
+    # Ea_param_P0_6 = [(0.57, 0.92), (0.79, 0.77), (0.59, 0.78), (0.82, 1.27)]
     
-    if ef_value == -0.6:
-        Ea_param = Ea_param_N0_6
+    # if ef_value == -0.6:
+    #     Ea_param = Ea_param_N0_6
     
-    elif ef_value == 0.6:
-        Ea_param = Ea_param_P0_6
-    else:
-        Ea_param = Ea_param_0
+    # elif ef_value == 0.6:
+    #     Ea_param = Ea_param_P0_6
+    # else:
+    #     Ea_param = Ea_param_0
     
     Ea1 = Ea_params[0][0] * reaction_energy_1 + Ea_params[0][1]
     Ea2 = Ea_params[1][0] * reaction_energy_2 + Ea_params[1][1]
