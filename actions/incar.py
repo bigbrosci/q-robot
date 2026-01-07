@@ -157,7 +157,7 @@ def freq_update(freq):
 mag_value = { 
     'Ag': 0.0, 'Cu': 1.0, 'Fe': 3.0, 'Ir': 0.0, 'Ni': 1.0, 'Pd': 0.0,
     'Pt': 0.0, 'Rh': 0.0, 'Co': 2.0, 'Ru': 0.0, 'Os': 0.0, 'Au': 0.0,
-    'Ti': 0.0, 'Zn': 0.0, 'Sn': 0.0, 'O': 0.0  # O  default magnetization 
+    'Ti': 0.0, 'Zn': 0.0, 'Sn': 0.0, 'O': 0.0, 'Mo':0  # O  default magnetization 
 }
 
 def spin_update(ispin):

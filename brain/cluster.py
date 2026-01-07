@@ -993,6 +993,7 @@ def plot_active_learning_from_csv(EF, results_dir='results'):
     os.makedirs(results_dir, exist_ok=True)
     out_png = os.path.join(results_dir, f'active_learning_metrics_{EF}.png')
     plt.savefig(out_png, dpi=300)
+    plt.show()
     plt.close()
     print(f"✅ Plot saved to {out_png}")
 
@@ -1020,7 +1021,7 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
     mae_test  = mean_absolute_error(df_test['Y_true'],  df_test['Y_pred'])
 
     # Create figure/axes
-    fig, ax = plt.subplots(figsize=(6, 6))
+    fig, ax = plt.subplots(figsize=(5, 6))
 
     # Scatter (圆点)
     ax.scatter(df_train['Y_true'], df_train['Y_pred'],
@@ -1053,11 +1054,11 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
     ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
     # Labels and title
-    ax.set_xlabel('Eads(DFT) /eV',  fontsize=20)
-    ax.set_ylabel('Eads(GA) / eV', fontsize=20)
+    ax.set_xlabel('Eads(DFT) /eV',  fontsize=18)
+    ax.set_ylabel('Eads(GA) / eV', fontsize=18)
     # ax.set_title(f'Iteration {ratio} Predictions (EF = {EF})', fontsize=16)
-    ax.legend(framealpha=0.8, fontsize=14)
-    ax.tick_params(axis='both', which='major', labelsize=18)  # major ticks
+    ax.legend(framealpha=0, fontsize=14)
+    ax.tick_params(axis='both', which='major', labelsize=14)  # major ticks
 
     ax.set_aspect('equal', adjustable='box')  # 可选：图形上 y=x 视觉上为 45°
 
@@ -1068,63 +1069,7 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
     plt.savefig(out_png, dpi=300)
     plt.close()
     print(f"✅ Saved scatter plot with MAEs to {out_png}")
-    
-# def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
-#     """
-#     Read training and testing prediction CSVs for a given iteration (ratio) and EF,
-#     plot true vs. predicted scatter for both sets, annotate with MAEs calculated
-#     directly from the data, and save the figure.
 
-#     Args:
-#         predict_csv_dir (str): Directory containing the CSVs.
-#         ratio (int or str): The iteration number (used in the filename).
-#         EF (float or str): The EF value (used in the filename and title).
-#     """
-#     # Paths to prediction CSVs
-#     train_fp = os.path.join(predict_csv_dir, f'train_preds_iter{ratio}_{EF}.csv')
-#     test_fp  = os.path.join(predict_csv_dir, f'test_preds_iter{ratio}_{EF}.csv')
-
-#     # Read data
-#     df_train = pd.read_csv(train_fp)
-#     df_test  = pd.read_csv(test_fp)
-
-#     # Compute MAEs directly
-#     mae_train = mean_absolute_error(df_train['Y_true'], df_train['Y_pred'])
-#     mae_test  = mean_absolute_error(df_test['Y_true'],  df_test['Y_pred'])
-
-#     # Create scatter plot
-#     plt.figure(figsize=(6,6))
-#     plt.scatter(df_train['Y_true'], df_train['Y_pred'],
-#                 color='tab:blue', label=f'Train (MAE = {mae_train:.3f} eV)', alpha=0.6, linestyle='--')
-#     plt.scatter(df_test['Y_true'], df_test['Y_pred'],
-#                 color='tab:red',  label=f'Test  (MAE = {mae_test:.3f} eV)',  alpha=0.6)
-
-#     # y = x reference line
-#     all_vals = pd.concat([df_train[['Y_true','Y_pred']],
-#                           df_test [['Y_true','Y_pred']]]).values.flatten()
-#     vmin, vmax = all_vals.min(), all_vals.max()
-#     plt.plot([vmin, vmax], [vmin, vmax], 'k--', lw=1)
-
-#     # # Annotate MAE values
-#     # text_x = vmin + 0.85*(vmax-vmin)
-#     # text_y = vmax - 0.85*(vmax-vmin)
-#     # plt.text(text_x, text_y,
-#     #          f"MAE_train: {mae_train:.3f} eV\nMAE_test:  {mae_test:.3f} eV",
-#     #          fontsize=12, bbox=dict(facecolor='white', alpha=0.8))
-
-#     # Labels and title
-#     plt.xlabel('True Eads',  fontsize=14)
-#     plt.ylabel('Predicted Eads', fontsize=14)
-#     plt.title(f'Iteration {ratio} Predictions (EF = {EF})', fontsize=16)
-#     plt.legend(framealpha=0.8, fontsize=12)
-#     plt.tight_layout()
-
-#     # Save figure
-#     out_png = os.path.join(predict_csv_dir, f'preds_iter{ratio}_{EF}.png')
-#     plt.savefig(out_png, dpi=300)
-#     plt.close()
-#     print(f"✅ Saved scatter plot with MAEs to {out_png}")
-    
     # === Additional figure: ALL predictions (train + test) ===
     all_fp = os.path.join(predict_csv_dir, f'all_preds_iter{ratio}_{EF}.csv')
     if os.path.exists(all_fp):

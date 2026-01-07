@@ -4,7 +4,6 @@ from ase.io import read
 import numpy as np
 import sys 
 
-
 metal, anchor, cutoff = sys.argv[1:]
 def find_ru_bonded_to_n(poscar_path, cutoff=2.7):
     # Read the POSCAR file
