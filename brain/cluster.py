@@ -296,7 +296,7 @@ def get_CN_GA(path, mult=0.9, metal='Ru'):
     atoms = read(file_in)
     print(metal)
     connections, cn_of_connected_atoms, exposed_top_sites, bridge_sites, hollow_sites, square_sites  = get_connection(atoms, metal=metal, mult=0.9)
-    
+    print('top', exposed_top_sites)
     def get_one_site_string(site):
         """Obtain the text string representation for single site """
         cn_values = sorted(cn_of_connected_atoms[site])
@@ -307,7 +307,7 @@ def get_CN_GA(path, mult=0.9, metal='Ru'):
             cn_values += [0] * (13 - 12)  # Pad with zeros if less than 12 elements
         
         cn_string = ''.join(number_to_letter(num) for num in cn_values)
-            
+         
         return cn_string
     
     def get_groups(site_indices, site_type):
@@ -337,6 +337,9 @@ def get_CN_GA(path, mult=0.9, metal='Ru'):
     for site in exposed_top_sites:
         key = site + 1
         GA_dict[key] = get_groups(site, 'top')
+        
+        if site == 30:
+            print(site, get_groups(site, 'top'))
 
     for sites in bridge_sites:
         key = '_'.join(str(i + 1) for i in sites)
@@ -993,7 +996,7 @@ def plot_active_learning_from_csv(EF, results_dir='results'):
     os.makedirs(results_dir, exist_ok=True)
     out_png = os.path.join(results_dir, f'active_learning_metrics_{EF}.png')
     plt.savefig(out_png, dpi=300)
-    plt.show()
+    # plt.show()
     plt.close()
     print(f"✅ Plot saved to {out_png}")
 
@@ -1038,13 +1041,43 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
     if vmin == vmax:
         eps = 1e-6
         vmin -= eps; vmax += eps
-    ax.plot([vmin-0.2, vmax+0.2], [vmin-0.2, vmax+0.2], 'k--', lw=1)
-    ax.set_xlim(vmin-0.2, vmax+0.2)
-    ax.set_ylim(vmin-0.2, vmax+0.2)
+        
+        
+        
+        
+    pad = 0.2
+    tick_step = 0.1   # 你想要的每个 tick 间隔（最终会有 4 个间隔）
+    
+    # 1) nice vmin/vmax（例：2.04 -> 2.0）
+    vmin0 = np.floor(vmin / tick_step) * tick_step
+    vmax0 = np.ceil (vmax / tick_step) * tick_step
+    
+    # 2) 加 padding
+    lo0 = vmin0 - pad
+    hi0 = vmax0 + pad
+    
+    # 3) 把 lo/hi 再对齐到 tick_step
+    lo0 = np.floor(lo0 / tick_step) * tick_step
+    hi0 = np.ceil (hi0 / tick_step) * tick_step
+    
+    # 4) 让区间长度 = 4 * tick_step * integer
+    span0 = hi0 - lo0
+    n_steps = int(np.ceil(span0 / (4 * tick_step)))   # 至少需要多少个(4*tick_step)
+    span = n_steps * 4 * tick_step
+    hi = lo0 + span
+    lo = lo0
+    
+    ax.plot([lo, hi], [lo, hi], 'k--', lw=1)
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
+        
+    # ax.plot([vmin-0.2, vmax+0.2], [vmin-0.2, vmax+0.2], 'k--', lw=1)
+    # ax.set_xlim(vmin-0.2, vmax+0.2)
+    # ax.set_ylim(vmin-0.2, vmax+0.2)
     
     # #For N_ads
     # ax.plot([-1.1, 0.7], [-1.1, 0.7], 'k--', lw=1)
-    # ax.set_xlim(-1.1, 0.7)
+    # ax.set_xlim(-2.0, 0.4)
     # ax.set_ylim(-1.1, 0.7)
 
     # === 关键：每个轴固定 5 个主刻度 ===
@@ -1053,12 +1086,14 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
     ax.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
 
+    # ax.tick_params(axis='both', which='major', labelsize=18)  # set x/y tick label font size
+
     # Labels and title
     ax.set_xlabel('Eads(DFT) /eV',  fontsize=18)
     ax.set_ylabel('Eads(GA) / eV', fontsize=18)
     # ax.set_title(f'Iteration {ratio} Predictions (EF = {EF})', fontsize=16)
-    ax.legend(framealpha=0, fontsize=14)
-    ax.tick_params(axis='both', which='major', labelsize=14)  # major ticks
+    ax.legend(framealpha=0, fontsize=14, loc='upper left', handletextpad=0.2)
+    ax.tick_params(axis='both', which='major', labelsize=16)  # major ticks
 
     ax.set_aspect('equal', adjustable='box')  # 可选：图形上 y=x 视觉上为 45°
 
@@ -1093,9 +1128,9 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
         # Labels and title
         plt.xlabel('Eads (DFT) / eV', fontsize=22)
         plt.ylabel('Eads (GA) / eV', fontsize=22)
-        plt.tick_params(axis='both', which='major', labelsize=20)
+        plt.tick_params(axis='both', which='major', labelsize=16,)
         # plt.title(f'Iteration {ratio} ALL Predictions (EF = {EF})', fontsize=16)
-        plt.legend(framealpha=0.8, fontsize=12)
+        plt.legend(framealpha=0.8, fontsize=14, loc='upper left', handletextpad=0.2)
         plt.tight_layout()
     
         # Save figure
@@ -1517,7 +1552,7 @@ def select_best_site(cluster_path, species, sites, Prop, site_mapping):
     
     for site in sites:
         candidate = site_mapping[site] if (site_mapping is not None and site in site_mapping) else site
-        data_path = Path("/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_sim_2025_09_27")
+        data_path = Path("/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_sim")
         filename = f"{species}_ads/results/all_preds_iter5_{Prop}.csv"
         filepath = os.path.join(data_path, filename)
         df = pd.read_csv(filepath)
@@ -1529,9 +1564,32 @@ def select_best_site(cluster_path, species, sites, Prop, site_mapping):
         else:
             Eads = predict_Eads_site(cluster_path, species, candidate, Prop)
         energy_dict[site] = Eads
-        print(f"{species} at site {site} ({candidate}): Eads = {Eads:.3f} eV")
-    best_site = min(energy_dict, key=energy_dict.get)
-    print(f"Best {species} site: {best_site} with Eads = {energy_dict[best_site]:.3f} eV\n")
+        # print(f"{species} at site {site} ({candidate}): Eads = {Eads:.3f} eV")
+    
+    # --- Filter overly strong adsorption for selected species (editable thresholds) ---
+    FILTER_THRESH = {
+        "NH3": -1.9,
+        "NH2": -3.9,
+        "NH":  -5.3,
+        "N":   -1.1,
+        "H":   -1.0,
+        "N2":  -1.0
+    }
+    
+    sp = species.upper()
+    print(sp)
+    if sp in FILTER_THRESH:
+        thr = FILTER_THRESH[sp]
+        filtered = {k: v for k, v in energy_dict.items() if v >= thr}
+        if filtered:
+            best_site = min(filtered, key=filtered.get)
+        else:
+            # fallback: if everything is filtered out, keep original behavior
+            best_site = min(energy_dict, key=energy_dict.get)
+    else:
+        best_site = min(energy_dict, key=energy_dict.get)
+        
+    # print(f"Best {species} site: {best_site} with Eads = {energy_dict[best_site]:.3f} eV\n")
     return best_site, energy_dict
 
 # ------------------ Candidate Mappings ------------------
@@ -3145,7 +3203,8 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     reaction_energy_1 = E_NH2 + (-6.76668776)/2 - E_NH3 
     reaction_energy_2 = E_NH  + (-6.76668776)/2 - E_NH2  
     reaction_energy_3 = E_N   + (-6.76668776)/2 - E_NH  
-    EN_N_gas = E_slab + gas_dict['N2'] - E_N_N - 0.5
+    # reaction_energy_4 = E_slab + gas_dict['N2'] - E_N_N  - 0.5
+    reaction_energy_4 = E_N2 - E_N_N  + 0.5 
 
     # Ea = a * ΔE + b
     # Ea_params = [
@@ -3171,7 +3230,7 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     Ea1 = Ea_params[0][0] * reaction_energy_1 + Ea_params[0][1]
     Ea2 = Ea_params[1][0] * reaction_energy_2 + Ea_params[1][1]
     Ea3 = Ea_params[2][0] * reaction_energy_3 + Ea_params[2][1]
-    Ea4 = Ea_params[3][0] * EN_N_gas + Ea_params[3][1]
+    Ea4 = Ea_params[3][0] * reaction_energy_4 + Ea_params[3][1] 
 
     Ea_list = [Ea1, Ea2, Ea3, Ea4]
 
