@@ -28,11 +28,9 @@ def find_ru_bonded_to_n(poscar_path, cutoff=2.7):
     return formatted_indices, short_distances  
 
 # Ex*ample usage of the function
-poscar_path = 'POSCAR'  # Specify the path to your POSCAR file
-cutoff = float(cutoff)  # M-H: 2.1, M-N: 2.7 
-
-
 try: 
+    poscar_path = 'POSCAR'  # Specify the path to your POSCAR file
+    cutoff = float(cutoff)  # M-H: 2.1, M-N: 2.7 
     bonded_ru, short_distances  = find_ru_bonded_to_n(poscar_path, cutoff)
 except:
     poscar_path = 'CONTCAR'  # Specify the path to your POSCAR file

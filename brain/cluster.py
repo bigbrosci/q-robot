@@ -1258,6 +1258,18 @@ def active_learning_one_model(models, model_name, EF, X, Y, sites,
             os.path.join(results_dir, f'all_preds_iter{iteration}_{EF}.csv'),
             index=False
         )
+        
+        # Print all deviations larger than 0.3 eV
+        deviations = np.abs(np.array(Y) - np.array(Y_all_pred))
+        large_dev_mask = deviations > 0.3
+        if large_dev_mask.any():
+            large_dev_indices = np.where(large_dev_mask)[0]
+            print(f"\n[Iteration {iteration}, EF={EF}] Deviations > 0.3 eV:")
+            for idx in large_dev_indices[np.argsort(-deviations[large_dev_indices])]:
+                print(f"  Site: {sites[idx]:>6} | Y_true: {Y[idx]:>8.4f} | Y_pred: {Y_all_pred[idx]:>8.4f} | Deviation: {deviations[idx]:>6.4f} eV")
+        else:
+            print(f"\n[Iteration {iteration}, EF={EF}] No deviations > 0.3 eV")
+
 
         # Log iteration
         print(f"Iteration {iteration}: train MAE={train_mae:.4f}, test MAE={mae:.4f}")
@@ -1422,48 +1434,12 @@ def find_all_rhombuses(atoms, connections, surface_indices, bond_length_threshol
     return rhombuses
 
 
-# ------------------ Site Conversion ------------------
-def convert_sites(sites_list):
-    """
-    Given a list of four site numbers corresponding to atoms A, B, C, and D (in clockwise order),
-    return a dictionary mapping standard site labels to their numeric string representations.
-    
-    For example, if sites_list = [20, 23, 24, 42]:
-      - "top_A": "20"
-      - "top_B": "23"
-      - "top_C": "24"
-      - "top_D": "42"
-      - "bridge_A-B": "20-23"
-      - "bridge_B-C": "23-24"
-      - "bridge_C-D": "24-42"
-      - "bridge_D-A": "20-42"  (always smaller-first)
-      - "hollow_ABD": "20-23-42"  (sorted ascending among A, B, D)
-      - "hollow_BCD": "23-24-42"  (sorted ascending among B, C, D)
-    """
-    if len(sites_list) != 4:
-        raise ValueError("sites_list must contain exactly four elements corresponding to A, B, C, and D.")
-    sites_list = [i + 1 for i in sites_list]
-    A, B, C, D = sites_list
-    site_dict = {}
-    site_dict["top_A"] = str(A)
-    site_dict["top_B"] = str(B)
-    site_dict["top_C"] = str(C)
-    site_dict["top_D"] = str(D)
-    site_dict["bridge_A-B"] = f"{min(A, B)}_{max(A, B)}"
-    site_dict["bridge_B-C"] = f"{min(B, C)}_{max(B, C)}"
-    site_dict["bridge_C-D"] = f"{min(C, D)}_{max(C, D)}"
-    site_dict["bridge_D-A"] = f"{min(D, A)}_{max(D, A)}"
-    site_dict["hollow_ABD"] = "_".join(str(x) for x in sorted([A, B, D]))
-    site_dict["hollow_BCD"] = "_".join(str(x) for x in sorted([B, C, D]))
-    # print(site_dict)
-    return site_dict
-
 def convert_sites_triangle_site(sites_list):
     """
     Given a list of three site numbers corresponding to atoms A, B, C(in clockwise order),
     return a dictionary mapping standard site labels to their numeric string representations.
     
-    For example, if sites_list = [20, 23, 24]:
+    For example, if sites_list = [20, 23, 24]: # Note the index is 1-based
       - "top_A": "20"
       - "top_B": "23"
       - "top_C": "24"
@@ -1474,66 +1450,21 @@ def convert_sites_triangle_site(sites_list):
     """
     if len(sites_list) != 3:
         raise ValueError("sites_list must contain exactly three elements corresponding to A, B, C.")
-    sites_list = [i + 1 for i in sites_list]
-    # print(sites_list)
+    
     A, B, C = sites_list
-    site_dict = {}
-    site_dict["top_A"] = str(A)
-    site_dict["top_B"] = str(B)
-    site_dict["top_C"] = str(C)
-    site_dict["bridge_A-B"] = f"{min(A, B)}_{max(A, B)}"
-    site_dict["bridge_B-C"] = f"{min(B, C)}_{max(B, C)}"
-    site_dict["bridge_A-C"] = f"{min(A, C)}_{max(A, C)}"
-    site_dict["hollow_ABC"] = "_".join(str(x) for x in sorted([A, B, C]))
-    return site_dict
+    sites_ads = [str(i) for i in sites_list]
+    bri_1 = f"{min(A, B)}_{max(A, B)}" 
+    bri_2 = f"{min(B, C)}_{max(B, C)}"  
+    bri_3 = f"{min(A, C)}_{max(A, C)}"
 
+    sites_ads.append(bri_1)
+    sites_ads.append(bri_2)
+    sites_ads.append(bri_3)
+    sites_ads.append("_".join(str(x) for x in sorted([A, B, C])))
 
-# def get_predictions(species: str, EF: int, site: int, base_path: str = "."):
-#     """
-#     Retrieve prediction values for a given species, EF, and site.
+    return sites_ads
 
-#     Parameters
-#     ----------
-#     species : str
-#         Name of the species (e.g., "NH3").
-#     EF : int
-#         EF value used to identify the CSV file.
-#     site : int
-#         Site number to extract.
-#     base_path : str
-#         Path to the folder containing the results directory.
-
-#     Returns
-#     -------
-#     dict
-#         Dictionary with site, Y_true_all, Y_pred_all values.
-#     """
-#     # Construct the file path
-#     data_path = '/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_sim_2025_08_20'
-#     filename = f"{species}_ads/results/all_preds_iter5_{EF}.csv"
-#     filepath = os.path.join(data_path, filename)
-
-#     # Read the CSV
-#     df = pd.read_csv(filepath)
-
-#     # Locate the row for the given site
-#     row = df.loc[df["site"] == site]
-
-#     if row.empty:
-#         raise ValueError(f"Site {site} not found in {filepath}")
-
-#     # Extract values
-#     result = {
-#         "site": int(row["site"].values[0]),
-#         "Y_true_all": float(row["Y_true_all"].values[0]),
-#         "Y_pred_all": float(row["Y_pred_all"].values[0])
-#     }
-
-#     return result
-
-
-# ------------------ Modified Helper Function ------------------
-def select_best_site(cluster_path, species, sites, Prop, site_mapping):
+def obtain_lowest_site(data_path, species, sites, EF):
     """
     Evaluate the predicted adsorption energy for a given species at each candidate site.
     If site_mapping is provided, convert the candidate label to its numeric string.
@@ -1541,259 +1472,116 @@ def select_best_site(cluster_path, species, sites, Prop, site_mapping):
     Args:
         cluster_path (str): Path to the cluster data.
         species (str): The adsorbate species (e.g., "NH3", "NH2", "NH", "N", "H", "N2").
-        sites (list): List of candidate site labels (e.g., "top_A", "bridge_A-B", etc.).
-        Prop: Additional properties required by predict_Eads_site. It can be either the EF values or polarizability 
-        site_mapping (dict, optional): Mapping of candidate labels to numeric strings.
+        sites (list): List of 1-based candidate site labels (e.g., "20", "21", '20_21', '18_19_20').
+        EF: Additional properties required by predict_Eads_site. It can be either the EF values or polarizability 
     
     Returns:
         tuple: (best_site, energy_dict) where energy_dict is keyed by the candidate (symbolic label).
     """
-    energy_dict = {}
+
+    cluster_path = data_path / 'slab' 
     
-    for site in sites:
-        candidate = site_mapping[site] if (site_mapping is not None and site in site_mapping) else site
-        data_path = Path("/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_sim")
-        filename = f"{species}_ads/results/all_preds_iter5_{Prop}.csv"
+    # Ensure EF is a float
+    ef_value = float(EF)
+
+    dict_slab = {
+        -0.7: -357.44210671,
+        -0.6: -356.63257649,
+        -0.5: -355.95232361,
+        -0.4: -355.39898709,
+        -0.3: -354.97087941,
+        -0.2: -354.66670785,
+        -0.1: -354.48543185,
+        0.0: -354.42631516,
+        0.1: -354.4891281,
+        0.2: -354.67388335,
+        0.3: -354.98111891,
+        0.4: -355.41184988,
+        0.5: -355.96776985,
+        0.6: -356.65161492,
+        0.7: -357.46803062
+        }
+    
+    E_slab = dict_slab[ef_value]
+        
+    energy_dict = {}
+    sites_ads = convert_sites_triangle_site(sites)
+    
+
+    # sites_ads:     ['5', '13', '29', '5_13', '13_29', '5_29', '5_13_29']
+    
+    def site_kind(site: str) -> str:
+        s = str(site)
+        n = s.count('_')
+        if n == 0:
+            return 'top'
+        elif n == 1:
+            return 'bridge'
+        elif n == 2:
+            return 'hollow'
+        else:
+            return 'other'
+
+    def is_allowed_site(species: str, site: str) -> bool:
+        k = site_kind(site)
+        if species == 'NH3':
+            return k == 'top'
+        if species == 'NH2':
+            return k in ('top', 'bridge')
+        return True  # 其他物种不限制
+
+
+
+    for site in sites_ads:
+        if not is_allowed_site(species, site):
+            continue
+    
+        filename = f"{species}_ads/results/all_preds_iter4_{EF}.csv"
         filepath = os.path.join(data_path, filename)
         df = pd.read_csv(filepath)
+    
         result_dict = df.set_index("site")[["Y_true_all", "Y_pred_all"]].T.to_dict("list")
         result_dict = {str(k): v for k, v in result_dict.items()}
-        
-        if candidate in result_dict.keys():
-            Eads = float(result_dict[candidate][0])
+    
+        site_str = str(site)
+        if site_str in result_dict:
+            Eads = float(result_dict[site_str][0])
         else:
-            Eads = predict_Eads_site(cluster_path, species, candidate, Prop)
-        energy_dict[site] = Eads
-        # print(f"{species} at site {site} ({candidate}): Eads = {Eads:.3f} eV")
+            Eads = predict_Eads_site(cluster_path, species, site_str, EF)
     
-    # --- Filter overly strong adsorption for selected species (editable thresholds) ---
-    FILTER_THRESH = {
-        "NH3": -1.9,
-        "NH2": -3.9,
-        "NH":  -5.3,
-        "N":   -1.1,
-        "H":   -1.0,
-        "N2":  -1.0
-    }
-    
-    sp = species.upper()
-    print(sp)
-    if sp in FILTER_THRESH:
-        thr = FILTER_THRESH[sp]
-        filtered = {k: v for k, v in energy_dict.items() if v >= thr}
-        if filtered:
-            best_site = min(filtered, key=filtered.get)
-        else:
-            # fallback: if everything is filtered out, keep original behavior
-            best_site = min(energy_dict, key=energy_dict.get)
-    else:
-        best_site = min(energy_dict, key=energy_dict.get)
+        energy_dict[site_str] = Eads
         
-    # print(f"Best {species} site: {best_site} with Eads = {energy_dict[best_site]:.3f} eV\n")
-    return best_site, energy_dict
-
-# ------------------ Candidate Mappings ------------------
-
-# (1) For NH3 adsorption:
-nh3_candidates = ["top_A", "top_B", "top_C", "top_D"]
-
-# (2) For NH3 → NH2 + H:
-def get_nh2_candidates(nh3_site):
-    mapping = {
-        "top_A": ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
-        "top_B": ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
-        "top_C": ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
-        "top_D": ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"]
-    }
-    return mapping.get(nh3_site, [])
-
-# For H in Step 2 (H determined by NH2):
-nh2_to_h_candidates_step2 = {
-    "top_A":     ["top_B", "top_D", "hollow_ABD", "hollow_BCD"],
-    "top_B":     ["top_A", "top_C", "hollow_ABD", "hollow_BCD"],
-    "top_C":     ["top_B", "top_D", "hollow_ABD", "hollow_BCD"],
-    "top_D":     ["top_A", "top_C", "hollow_ABD", "hollow_BCD"],
-    "bridge_A-B": ["top_A", "top_B", "bridge_A-B", "hollow_ABD"],
-    "bridge_B-C": ["top_B", "top_C", "bridge_B-C", "hollow_BCD"],
-    "bridge_C-D": ["top_C", "top_D", "bridge_C-D", "hollow_BCD"],
-    "bridge_D-A": ["top_D", "top_A", "bridge_D-A", "hollow_ABD"],
-    "hollow_ABD": ["hollow_ABD", "top_A", "top_B", "top_D", "bridge_A-B", "bridge_D-A"],
-    "hollow_BCD": ["hollow_BCD", "top_B", "top_C", "top_D", "bridge_B-C", "bridge_C-D"]
-}
-
-# (3) For NH2 → NH + H:
-nh2_to_nh_candidates = {
-    "top_A":     ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
-    "top_B":     ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
-    "top_C":     ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
-    "top_D":     ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"],
-    "bridge_A-B": ["top_A", "top_B", "bridge_A-B", "hollow_ABD"],
-    "bridge_B-C": ["top_B", "top_C", "bridge_B-C", "bridge_A-B", "hollow_BCD"],
-    "bridge_C-D": ["top_C", "top_D", "bridge_C-D", "hollow_BCD"],
-    "bridge_D-A": ["top_D", "top_A", "bridge_D-A", "hollow_ABD"],
-    "hollow_ABD": ["hollow_ABD", "top_A", "top_B", "top_D", "bridge_A-B", "bridge_D-A"],
-    "hollow_BCD": ["hollow_BCD", "top_B", "top_C", "top_D", "bridge_B-C", "bridge_C-D"]
-}
-
-# For H in Step 3 (H determined by NH):
-nh_to_h_candidates = {
-    "top_A":     ["top_B", "top_D", "top_C", "hollow_ABD", "hollow_BCD"],
-    "top_B":     ["top_A", "top_C", "top_D", "bridge_A-B", "bridge_B-C", "bridge_D-A", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
-    "top_C":     ["top_B", "top_D", "top_A", "bridge_B-C", "bridge_C-D", "bridge_A-B", "bridge_D-A", "hollow_BCD", "hollow_ABD"],
-    "top_D":     ["top_A", "top_B", "top_C", "bridge_C-D", "bridge_D-A", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
-    "bridge_A-B": ["top_C", "top_D", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
-    "bridge_B-C": ["top_A", "top_D", "bridge_D-A", "bridge_A-B", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
-    "bridge_C-D": ["top_A", "top_B", "bridge_A-B", "bridge_B-C", "bridge_D-A", "hollow_ABD", "hollow_BCD"],
-    "bridge_D-A": ["top_B", "top_C", "bridge_B-C", "bridge_A-B", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
-    "hollow_ABD": ["hollow_BCD", "top_A", "top_B", "top_C", "top_D"],
-    "hollow_BCD": ["hollow_ABD", "top_A", "top_B", "top_C", "top_D"]
-}
-
-# (4) For NH → N + H:
-nh_to_n_candidates = {
-    "top_A":     ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
-    "top_B":     ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
-    "top_C":     ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
-    "top_D":     ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"],
-    "bridge_A-B": ["top_A", "top_B", "bridge_A-B", "hollow_ABD"],
-    "bridge_B-C": ["top_B", "top_C", "bridge_B-C", "bridge_A-B", "hollow_BCD"],
-    "bridge_C-D": ["top_C", "top_D", "bridge_C-D", "hollow_BCD"],
-    "bridge_D-A": ["top_D", "top_A", "bridge_D-A", "hollow_ABD"],
-    "hollow_ABD": ["hollow_ABD", "top_A", "top_B", "top_D", "bridge_A-B", "bridge_D-A"],
-    "hollow_BCD": ["hollow_BCD", "top_B", "top_C", "top_D", "bridge_B-C", "bridge_C-D"]
-}
-# For H in Step 4, reuse nh_to_h_candidates.
-
-# ------------------ Reaction Chain Functions ------------------
-
-# Step 1: NH₃ Adsorption
-def determine_NH3_configuration(cluster_path, Prop, site_mapping=None):
-    best_NH3_site, energies = select_best_site(cluster_path, "NH3", nh3_candidates, Prop, site_mapping)
-    return {"site": best_NH3_site, "energy": energies[best_NH3_site]}
-
-# Step 2: NH₃ → NH₂ + H (H determined by NH2)
-def determine_NH2_configuration(cluster_path, Prop, best_NH3_site, site_mapping=None):
-    nh2_candidates = get_nh2_candidates(best_NH3_site)
-    best_NH2_site, energies_NH2 = select_best_site(cluster_path, "NH2", nh2_candidates, Prop, site_mapping)
-    candidate_H_sites = nh2_to_h_candidates_step2.get(best_NH2_site, [])
-    if candidate_H_sites:
-        best_H_site, energies_H = select_best_site(cluster_path, "H", candidate_H_sites, Prop, site_mapping)
-    else:
-        best_H_site, energies_H = None, {}
-    return {
-        "NH2": {"site": best_NH2_site, "energy": energies_NH2[best_NH2_site]},
-        "H1": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}
-    }
-
-# Step 3: NH₂ → NH + H (H determined by NH)
-def determine_NH_configuration(cluster_path, Prop, best_NH2_site, site_mapping=None):
-    candidate_NH_sites = nh2_to_nh_candidates.get(best_NH2_site, [])
-    best_NH_site, energies_NH = select_best_site(cluster_path, "NH", candidate_NH_sites, Prop, site_mapping)
-    candidate_H_sites = nh_to_h_candidates.get(best_NH_site, [])
-    if candidate_H_sites:
-        best_H_site, energies_H = select_best_site(cluster_path, "H", candidate_H_sites, Prop, site_mapping)
-    else:
-        best_H_site, energies_H = None, {}
-    return {
-        "NH": {"site": best_NH_site, "energy": energies_NH[best_NH_site]},
-        "H2": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}
-    }
-
-# Step 4: NH → N + H (H determined by N)
-def determine_N_configuration(cluster_path, Prop, best_NH_site, site_mapping=None):
-    candidate_N_sites = nh_to_n_candidates.get(best_NH_site, [])
-    if candidate_N_sites:
-        best_N_site, energies_N = select_best_site(cluster_path, "N", candidate_N_sites, Prop, site_mapping)
-    else:
-        best_N_site, energies_N = None, {}
-    candidate_H_sites = nh_to_h_candidates.get(best_N_site, [])
-    if candidate_H_sites:
-        best_H_site, energies_H = select_best_site(cluster_path, "H", candidate_H_sites, Prop, site_mapping)
-    else:
-        best_H_site, energies_H = None, {}
-    return {
-        "N": {"site": best_N_site, "energy": energies_N.get(best_N_site, None)},
-        "H3": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}
-    }
-
-# Step 5: N₂ Adsorption
-def determine_N2_configuration(cluster_path, Prop, site_mapping=None):
-    candidate_sites = [
-        "top_A", "top_B", "top_C", "top_D",
-        "bridge_A-B", "bridge_B-C", "bridge_C-D", "bridge_D-A",
-        "hollow_ABD", "hollow_BCD"
-    ]
-    best_N2_site, energies_N2 = select_best_site(cluster_path, "N2", candidate_sites, Prop, site_mapping)
-    return {"site": best_N2_site, "energy": energies_N2[best_N2_site]}
-
-
-### For triangle sites 
-# Step 1: NH₃ Adsorption
-nh3_candidates_tri = ["top_A", "top_B", "top_C"]
-nh2_candidates_tri = ["top_A", "top_B", "top_C", "bridge_A-B", "bridge_B-C", "bridge_A-C"]
-nh_candidates_tri = ["top_A", "top_B", "top_C", "bridge_A-B", "bridge_B-C", "bridge_A-C", "hollow_ABC" ]
-n_candidates_tri =  nh_candidates_tri 
-h_candidates_tri =  nh_candidates_tri 
-n2_candidates_tri = nh_candidates_tri 
-
-def determine_NH3_configuration_tri(cluster_path, Prop, site_mapping):
-    best_NH3_site, energies = select_best_site(cluster_path, "NH3", nh3_candidates_tri, Prop, site_mapping)
-    return {"site": best_NH3_site, "energy": energies[best_NH3_site]}
-def determine_NH2_configuration_tri(cluster_path, Prop, site_mapping):
-    best_NH2_site, energies_NH2 = select_best_site(cluster_path, "NH2", nh2_candidates_tri, Prop, site_mapping)
-    return {"NH2": {"site": best_NH2_site, "energy": energies_NH2[best_NH2_site]}}
-def determine_H_configuration_tri(cluster_path, Prop, site_mapping):    
-    best_H_site, energies_H = select_best_site(cluster_path, "H", h_candidates_tri, Prop, site_mapping)
-    return {"H": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}}
-def determine_NH_configuration_tri(cluster_path, Prop, site_mapping):
-    best_NH_site, energies_NH = select_best_site(cluster_path, "NH", nh_candidates_tri, Prop, site_mapping)
-    return {"NH": {"site": best_NH_site, "energy": energies_NH[best_NH_site]}}
-def determine_N_configuration_tri(cluster_path, Prop, site_mapping):
-    best_N_site, energies_N = select_best_site(cluster_path, "N", n_candidates_tri, Prop, site_mapping)
-    return {"N": {"site": best_N_site, "energy": energies_N.get(best_N_site, None)}}
-def determine_N2_configuration_tri(cluster_path, Prop, site_mapping):
-    best_N2_site, energies_N2 = select_best_site(cluster_path, "N2", n2_candidates_tri, Prop, site_mapping)
-    return {"site": best_N2_site, "energy": energies_N2[best_N2_site]}
-
-
-
-
-def determine_full_configuration_triangle_site(cluster_path, Prop, sites_list=None):
-    """
-    Determine the full stable configuration for the reaction chain and return a dictionary
-    where each species is mapped to a tuple (site, energy):
-      1. NH3 → NH2 + H      (H determined by NH2)
-      2. NH2 → NH + H       (H determined by NH)
-      3. NH  → N + H        (H determined by N)
-      4. Also determine the N2 adsorption site.
     
-    If sites_list is provided (a list of four numbers for atoms A, B, C, D in clockwise order),
-    it is converted to a mapping for energy predictions.
+    best_site = min(energy_dict, key=energy_dict.get)
+    E_ads_best = energy_dict[best_site]
     
-    Returns a dictionary with keys:
-      "NH3", "NH2", "NH", "N", "N2", "H1", "H2", and "H3".
-    """
-    site_mapping = convert_sites_triangle_site(sites_list) 
-    config_NH3 = determine_NH3_configuration_tri(cluster_path, Prop, site_mapping)
-    config_NH2 = determine_NH2_configuration_tri(cluster_path, Prop, site_mapping)
-    config_NH = determine_NH_configuration_tri(cluster_path, Prop, site_mapping)
-    config_N = determine_N_configuration_tri(cluster_path, Prop,  site_mapping)
-    config_H = determine_H_configuration_tri(cluster_path, Prop,  site_mapping)
-    config_N2 = determine_N2_configuration_tri(cluster_path, Prop, site_mapping)
-
-    final_config = {
-        "NH3": (config_NH3["site"], config_NH3["energy"]),
-        "NH2": (config_NH2["NH2"]["site"], config_NH2["NH2"]["energy"]),
-        "NH":  (config_NH["NH"]["site"], config_NH["NH"]["energy"]),
-        "N":   (config_N["N"]["site"], config_N["N"]["energy"]),
-        "N2":  (config_N2["site"], config_N2["energy"]),
-        "H":   (config_H["H"]["site"], config_H["H"]["energy"]),
+    # 
+    EADS_FLOOR = {
+        'H':   -1.0,
+        'NH3': -1.8,
+        'NH2': -4.0,
+        'NH':  -5.3,
+        'N':   -1.0,
+        'N2': -1.5
     }
     
-    return final_config
+    floor = EADS_FLOOR.get(species)
+    E_ads_best = max(float(E_ads_best), floor)  # 若 E_ads_best < floor，则用 floor
+    
+    if species == 'N':
+        DFT_best = E_ads_best + E_slab + gas_dict['N2'] * 0.5
+    elif species == 'H':
+        DFT_best = E_ads_best + E_slab + gas_dict['H2'] * 0.5
+    else: 
+        DFT_best = E_ads_best + E_slab + gas_dict[species]
+        
+            
+    print(f"Best {species} site: {best_site} under {EF} with Eads = {energy_dict[best_site]:.3f} eV\n")
+    
+    return {species: [best_site, E_ads_best, DFT_best]}
 
 
-def compute_EDFT(ef_value, final_config, gas_dict):
+def compute_EDFT(data_path, site, EF):
     """
     Compute the DFT simulated energy (EDFT) for each species using the following formulas:
       - EDFT(NH3) = Eads(NH3) + E(slab) + E(NH3_gas)
@@ -1809,674 +1597,291 @@ def compute_EDFT(ef_value, final_config, gas_dict):
          ...
       }
     """
-    ef_value = float(ef_value)
-    E_slab  = -6.2414 * ef_value**2 - 0.01405 * ef_value - 354.4197 
+
+    ef_value = float(EF)
+    # E_slab  = -6.2414 * EF**2 - 0.01405 * EF - 354.4197 
+
+    dict_slab = {
+        -0.7: -357.44210671,
+        -0.6: -356.63257649,
+        -0.5: -355.95232361,
+        -0.4: -355.39898709,
+        -0.3: -354.97087941,
+        -0.2: -354.66670785,
+        -0.1: -354.48543185,
+        0.0: -354.42631516,
+        0.1: -354.4891281,
+        0.2: -354.67388335,
+        0.3: -354.98111891,
+        0.4: -355.41184988,
+        0.5: -355.96776985,
+        0.6: -356.65161492,
+        0.7: -357.46803062
+        }
     
+    E_slab = dict_slab[ef_value]
+
     edft = {}
 
-    # Common pattern
-    edft["NH3"] = (
-        final_config["NH3"][0],
-        final_config["NH3"][1],
-        final_config["NH3"][1] + E_slab + gas_dict["NH3"]
-    )
-
-    edft["NH2"] = (
-        final_config["NH2"][0],
-        final_config["NH2"][1],
-        final_config["NH2"][1] + E_slab + gas_dict["NH2"]
-    )
-
-    edft["NH"] = (
-        final_config["NH"][0],
-        final_config["NH"][1],
-        final_config["NH"][1] + E_slab + gas_dict["NH"]
-    )
-
-    edft["N"] = (
-        final_config["N"][0],
-        final_config["N"][1],
-        final_config["N"][1] + E_slab + 0.5 * gas_dict["N2"]
-    )
-
-
-    edft["H"] = (
-        final_config["H"][0],
-        final_config["H"][1],
-        final_config["H"][1] + E_slab + 0.5 * gas_dict["H2"]
-        )
-
-    edft["N2"] = (
-        final_config["N2"][0],
-        final_config["N2"][1],
-        final_config["N2"][1] + E_slab + gas_dict["N2"]
-    )
+    for species in ["NH3", "NH2", "NH", "N", "H", "N2"]:
+        dict_species = obtain_lowest_site(data_path, species, site, EF)
+        edft.update(dict_species)
 
     return edft, E_slab
 
 
-def find_rhombus(atoms, top_list, B, D, bond_threshold=2.6):
+### MKM 
+
+def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     """
-    Given a list of four atom indices (top_list) that form a quadrilateral in clockwise order,
-    this function identifies a valid rhombus if:
-      1) The pair of atoms with the longest distance is assigned as A and C (with the smaller index as A).
-      2) The remaining two atoms are B and D (with the smaller index as B).
-      3) The bonds A–B, B–C, C–D, and D–A all have distances less than or equal to bond_threshold.
-         (In this design, B and D are assumed to be bonded, representing the shorter bridge.)
+    根据吸附态字典和 Ru 的能量，生成 replacement_dict，用于替换 Excel Sheet1 中的数据。
+
+    参数：
+    - adsorption_data: 吸附物字典，格式为 {ads: (site, adsorption_energy, total_energy)}
+
+    返回：
+    - replacement_dict: key 为 Excel 中的 A 列项（如 "NH3(T)"），value 为替换后的能量值（float）
+    """
+
+    # E_slab  = -6.2414 * ef_value**2 - 0.01405 * ef_value - 354.4197 
+
+    dict_H = {
+        -0.7: -361.62253006,
+        -0.6: -360.8042509,
+        -0.5: -360.11240866,
+        -0.4: -359.55221139,
+        -0.3: -359.12110435,
+        -0.2: -358.8141788,
+        -0.1: -358.63071895,
+        0.0: -358.57019498,
+        0.1: -358.63223688,
+        0.2: -358.81681762,
+        0.3: -359.12893043,
+        0.4: -359.57204797,
+        0.5: -360.14213764,
+        0.6: -360.83989921,
+        0.7: -361.66972994
+        }
     
-    Parameters:
-      atoms: An object that supports atoms.get_distance(i, j) for distance between atoms.
-      top_list: List of four atom indices.
-      B, D: The two atoms chosen (from top_list) that form the short bridge (B–D).
-      bond_threshold: Maximum allowed distance for a bond.
+    dict_slab = {
+        -0.7: -357.44210671,
+        -0.6: -356.63257649,
+        -0.5: -355.95232361,
+        -0.4: -355.39898709,
+        -0.3: -354.97087941,
+        -0.2: -354.66670785,
+        -0.1: -354.48543185,
+        0.0: -354.42631516,
+        0.1: -354.4891281,
+        0.2: -354.67388335,
+        0.3: -354.98111891,
+        0.4: -355.41184988,
+        0.5: -355.96776985,
+        0.6: -356.65161492,
+        0.7: -357.46803062
+        }
     
-    Returns:
-      A list [A, B, C, D] representing the valid rhombus in clockwise order,
-      or an empty list if no valid rhombus is found.
-    """
-    # Compute the distance between B and D (the short bridge)
-    BD_distance = atoms.get_distance(B, D)
-    top_list_sorted = sorted(top_list)
 
-    for A in top_list_sorted:
-        if A == B or A == D:
-            continue
-
-        # Check whether A forms bonds with both B and D
-        if atoms.get_distance(A, B) <= bond_threshold and atoms.get_distance(A, D) <= bond_threshold:
-            for C in top_list_sorted:
-                if C in (A, B, D):
-                    continue
-
-                # Check whether C forms bonds with both B and D
-                if atoms.get_distance(C, B) <= bond_threshold and atoms.get_distance(C, D) <= bond_threshold:
-                    AC_distance = atoms.get_distance(A, C)
-                    # The longest distance should be between A and C.
-                    if AC_distance > BD_distance:
-                        return [A, B, C, D]
-    return []
-
-
-def dihedral_angle(points):
-    """
-    Calculate the dihedral angle (in degrees) between the plane defined by A, B, D
-    and the plane defined by B, C, D.
+    # Initialize replacement_dict
+    E_slab = dict_slab[ef_value]
+    # E_H = dict_H[ef_value]
     
-    Parameters:
-        points (array-like): A 4x3 array containing the positions of points A, B, C, and D.
+    replacement_dict = {"RU(T)": E_slab}
+    # replacement_dict['H(T)'] = E_H
+
+    # Adsorption species 
+    for species in ['NH3', 'NH2', 'NH', 'N', 'N2', 'H']:
+        if species in adsorption_data:
+            replacement_dict[f"{species}(T)"] = adsorption_data[species][2]
+    E_N_N = 2 * adsorption_data['N'][1] + gas_dict['N2'] +  E_slab  + 0.5 
     
-    Returns:
-        float: The dihedral angle in degrees.
-    """
-    A, B, C, D = points
-    # Compute normals for the two planes
-    n1 = np.cross(B - A, D - A)
-    n1 /= np.linalg.norm(n1)
-    n2 = np.cross(C - B, D - B)
-    n2 /= np.linalg.norm(n2)
-    # Compute the angle between the normals
-    dot_val = np.clip(np.dot(n1, n2), -1.0, 1.0)
-    angle = np.degrees(np.arccos(dot_val))
-    return angle
-
-def filter_rhombus_by_dihedral(rhombuses, atoms, dihedral_threshold=120):
-    """
-    Separate candidate rhombus configurations into planar and non-planar groups
-    based on the dihedral angle between planes ABD and BCD.
+    replacement_dict['N_N(T)'] = E_N_N
     
-    Parameters:
-        rhombuses (list): List of candidate rhombus configurations (each is a list [A, B, C, D]).
-        atoms: An ASE Atoms object (with .position and get_distance() method).
-        dihedral_threshold (float): Angle (in degrees) above which a configuration is considered planar.
+
+    # Calculate energies for transition states and intermediates
+
+    E_NH3 = adsorption_data['NH3'][2]
+    E_NH2 = adsorption_data['NH2'][2]
+    E_NH = adsorption_data['NH'][2]
+    E_N  = adsorption_data['N'][2]
+    E_N2 = adsorption_data['N2'][2]
+    E_H = adsorption_data['H'][2]
+
+
+    # if float(adsorption_data['NH3'][1]) <= -1.9:
+    #     print('E_NH3', adsorption_data['NH3'])
+
+
+    #V1
+    # E1  = E_NH2 + E_H - E_NH3 - E_slab
+    # E2  = E_NH + E_H - E_NH2 - E_slab
+    # E3  = E_N + E_H - E_NH - E_slab
+    # E4 = E_slab + gas_dict['N2'] - E_N_N     
     
-    Returns:
-        tuple: (planar, non_planar)
-            - planar: list of candidates with dihedral angle >= dihedral_threshold.
-            - non_planar: list of candidates with dihedral angle < dihedral_threshold.
-    """
-    planar = []
-    non_planar = []
-    for indices in rhombuses:
-        points = np.array([atoms[idx].position for idx in indices])
-        angle = dihedral_angle(points)
-        if angle >= dihedral_threshold:
-            planar.append(indices)
-        else:
-            non_planar.append(indices)
-    return planar, non_planar
-
-def filter_rhombus_by_AC_BD(planar, non_planar, atoms, AC_cutoff=3.0):
-    """
-    From the candidate rhombus configurations (planar and non-planar), check if any candidate in the non-planar group
-    has a very short A–C distance (less than AC_cutoff). If so, use the A–C pair (sorted) to find candidates
-    that have this pair as their B–D bond. Those candidates are then removed from both the planar and non-planar lists
-    and collected in an invalid_rhombus list.
+    #V2
+    # E1  = E_NH2 + E_H - E_NH3 - E_slab
+    # E2  = E_NH + E_H - E_NH2 - E_slab
+    # E3  = E_N + E_H - E_NH - E_slab
+    # E4 = E_N2 - E_N_N    
     
-    Parameters:
-        planar (list): List of candidate rhombus configurations classified as planar.
-        non_planar (list): List of candidate configurations classified as non-planar.
-        atoms: An ASE Atoms object.
-        AC_cutoff (float): Distance cutoff (in Å) for the A–C bond.
+
+    # v3
+    E1 = E_NH2 + (-6.76668776)/2 - E_NH3 
+    E2 = E_NH  + (-6.76668776)/2 - E_NH2  
+    E3 = E_N   + (-6.76668776)/2 - E_NH  
+    E4 = E_slab + gas_dict['N2'] - E_N_N     
+ 
+    # #v4
+    # E1 = E_NH2 + (-6.76668776)/2 - E_NH3 
+    # E2 = E_NH  + (-6.76668776)/2 - E_NH2  
+    # E3 = E_N   + (-6.76668776)/2 - E_NH  
+    # E4 = E_N2 - E_N_N   
     
-    Returns:
-        tuple: (new_planar, new_non_planar, invalid_rhombus)
-            - new_planar: Planar candidates after removal.
-            - new_non_planar: Non-planar candidates after removal.
-            - invalid_rhombus: Candidates removed because their A–C pair (from non-planar with short A–C)
-                                is used as a B–D pair.
-    """
-    invalid_rhombus = []
-    # Combine candidates from both groups
-    all_candidates = planar + non_planar
-
-    # Build a dictionary mapping each candidate's B–D pair (sorted) to candidate(s)
-    bd_dict = {}
-    for candidate in all_candidates:
-        BD = tuple(sorted((candidate[1], candidate[3])))
-        bd_dict.setdefault(BD, []).append(candidate)
-
-    # For each candidate in the non-planar list, check its A–C distance.
-    for candidate in non_planar:
-        AC = tuple(sorted((candidate[0], candidate[2])))
-        AC_distance = atoms.get_distance(candidate[0], candidate[2])
-        if AC_distance < AC_cutoff:
-            if AC in bd_dict:
-                for cand in bd_dict[AC]:
-                    if cand not in invalid_rhombus:
-                        invalid_rhombus.append(cand)
-
-    new_planar = [cand for cand in planar if cand not in invalid_rhombus]
-    new_non_planar = [cand for cand in non_planar if cand not in invalid_rhombus]
-
-    return new_planar, new_non_planar, invalid_rhombus
-
-
-def point_in_prism(point, base_vertices, normal, height):
-    """
-    Check if a point is inside the prism defined by the base triangle and its top translated version.
-
-    Parameters:
-    - point (ndarray): The position of the atom being checked.
-    - base_vertices (list): The three vertices of the base triangle.
-    - normal (ndarray): The normal vector of the triangle.
-    - height (float): The prism height limit.
-
-    Returns:
-    - bool: True if the point is inside the prism, False otherwise.
-    """
-    def is_point_in_triangle(p, v1, v2, v3):
-        """Check if a point p lies inside a 2D projection of a triangle"""
-        u = v2 - v1
-        v = v3 - v1
-        w = p - v1
-
-        uu = np.dot(u, u)
-        uv = np.dot(u, v)
-        vv = np.dot(v, v)
-        wu = np.dot(w, u)
-        wv = np.dot(w, v)
-
-        denom = uv * uv - uu * vv
-        if abs(denom) < 1e-6:
-            return False  # Degenerate triangle
-
-        s = (uv * wv - vv * wu) / denom
-        t = (uv * wu - uu * wv) / denom
-
-        return (s >= 0) and (t >= 0) and (s + t <= 1)
-
-    # Project point onto the base plane
-    v0 = base_vertices[0]
-    distance_to_base = np.dot(point - v0, normal)
-
-    # **Check if point is between top and bottom planes**
-    if not (-height <= distance_to_base <= height):
-        return False
-
-    # Project the point onto the base triangle's plane
-    projected_point = point - distance_to_base * normal
-
-    # **Check if projected point is inside the base triangle**
-    return is_point_in_triangle(projected_point, *base_vertices)
-
-def count_atoms_in_prism(atoms, indices, height):
-    """
-    Count the number of atoms within the prism formed by translating the base triangle
-    along its normal vector by a given height.
-    """
-    pos = atoms.get_positions()
-
-    # Get positions of the three triangle vertices
-    p1, p2, p3 = pos[indices[0]], pos[indices[1]], pos[indices[2]]
-
-    # Compute the normal vector
-    normal = calculate_normal(p1, p2, p3)
-
-    # **Translate base vertices to form the top and bottom triangles**
-    top_triangle = [p1 + height * normal, p2 + height * normal, p3 + height * normal]
-    bottom_triangle = [p1 - height * normal, p2 - height * normal, p3 - height * normal]
-
-    # Count atoms in the top and bottom regions
-    atom_count_top = 0
-    atom_count_bottom = 0
-
-    for i in range(len(pos)):
-        if i in indices:  # Skip the three triangle atoms
-            continue
-
-        p = pos[i]
-
-        # **Check if the atom is inside the top prism region**
-        if point_in_prism(p, top_triangle, normal, height):
-            print(f"Top Prism: {p}")
-            atom_count_top += 1
-
-        # **Check if the atom is inside the bottom prism region (now correctly defined)**
-        if point_in_prism(p, bottom_triangle, normal, height):  
-            atom_count_bottom += 1
-            print(f"Bottom Prism: {p}")
-
-    return atom_count_top, atom_count_bottom
-
-def is_exposed_triangle(atoms, triangle_sites, height=2.2):
-    """
-    Check if a triangle site is exposed based on atom count in the prism region.
-
-    Returns:
-        True  -> Triangle is exposed
-        False -> Triangle is not exposed (blocked)
-    """
-    atom_count_top, atom_count_bottom = count_atoms_in_prism(atoms, triangle_sites, height)
-
-    if atom_count_top > 0 and atom_count_bottom > 0:
-        # print(atom_count_top, atom_count_bottom)
-        return False 
-    return True 
-
-def is_exposed_rhombus(atoms, rhombus_indices, height=2.5):
-    """
-    Check if a rhombus formed by four atom indices is exposed.
     
-    The function divides the rhombus (defined by indices [A, B, C, D]) into two triangles:
-      - Triangle 1: [A, B, D]
-      - Triangle 2: [B, C, D]
     
-    For each triangle, it calls count_atoms_in_prism(atoms, triangle, height) to determine the number
-    of atoms above (top) and below (bottom) the plane of the triangle. If, for both triangles, at least
-    one triangle does NOT have atoms on both sides of its plane, the rhombus is considered exposed.
+    # print('E_speices', )
+    # print('E1-4', E1, E2, E3, E4)
     
-    Parameters:
-        atoms: An ASE Atoms object (each atom has a .position attribute).
-        rhombus_indices (list): A list of four atom indices [A, B, C, D] (in clockwise order).
-        height (float): Height threshold (in Å) for the prism check.
-    
-    Returns:
-        bool: True if the rhombus is exposed, False otherwise.
-    """
-    triangles = [
-        [rhombus_indices[0], rhombus_indices[1], rhombus_indices[3]],  # Triangle ABD
-        [rhombus_indices[1], rhombus_indices[2], rhombus_indices[3]]   # Triangle BCD
+    # BEP scaling Ea = a * ΔE + b
+    Ea_params = [
+        (0.52, 0.90),  # TS1_NH3(T)
+        (0.86, 0.73),  # TS2_NH2(T)
+        (0.62, 0.75),  # TS3_NH(T)
+        (0.62, 1.39)   # TS4_N2(T)
     ]
+
+    Ea1 = Ea_params[0][0] * E1 + Ea_params[0][1]
+    Ea2 = Ea_params[1][0] * E2 + Ea_params[1][1]
+    Ea3 = Ea_params[2][0] * E3 + Ea_params[2][1]
+    Ea4 = Ea_params[3][0] * E4 + Ea_params[3][1] 
+
+    Ea_list = [Ea1, Ea2, Ea3, Ea4]
+    Ea1, Ea2, Ea3, Ea4 = [max(0.01, ea) for ea in Ea_list]
     
-    results = []
-    for triangle in triangles:
-        atom_count_top, atom_count_bottom = count_atoms_in_prism(atoms, triangle, height)
-        # If both top and bottom have atoms, then the triangle is not exposed.
-        if atom_count_top > 0 and atom_count_bottom > 0:
-            results.append(False)
+    
+    dict_energy = {
+        "E_H":   adsorption_data["H"][1],
+        "E_N":   adsorption_data["N"][1],
+        "E_NH":  adsorption_data["NH"][1],
+        "E_NH2": adsorption_data["NH2"][1],
+        "E_NH3": adsorption_data["NH3"][1],
+        "Ea1":   Ea_list[0],
+        "Ea2":   Ea_list[1],
+        "Ea3":   Ea_list[2],
+        "Ea4":   Ea_list[3],
+    }
+
+    # print(adsorption_data["NH3"])
+    # dft energy for transition states
+    replacement_dict['TS1_NH3(T)'] = E_NH3 + Ea1
+    replacement_dict['TS2_NH2(T)'] = E_NH2 + Ea2
+    replacement_dict['TS3_NH(T)']  = E_NH  + Ea3
+    replacement_dict['TS4_N2(T)']  = E_N_N + Ea4
+
+    ref_dict = {k: v - E_slab for k, v in replacement_dict.items()}
+
+    return ref_dict, dict_energy
+
+
+def update_excel_with_replacement(index_list, replacement_dict, ef_value,
+                                  template_file="NH3_temp.xlsx", base_dir="mkm_inputs", verbose=True):
+    """
+    Create a structured directory based on index and EF, update the "species" sheet 
+    in the Excel template with new data, execute additional workflow commands, and save the result.
+    
+    Parameters:
+        index_list: List of indices used for naming subfolders, e.g. [12, 43, 40, 44]
+        replacement_dict: Dictionary with replacement items, e.g. {"NH3(T)": -375.2, ...}
+        ef_value: External EF value (float, can be negative) for naming subfolders (e.g. -0.3)
+        template_file: Excel template file name; now expected to be located inside base_dir.
+        base_dir: Base directory (e.g. "mkm_inputs")
+        verbose: Whether to print verbose output.
+    """
+    # 1. Build directory paths
+    index_folder = "_".join(map(str, index_list))
+    ef_folder = f"EF_{ef_value:.1f}"  # e.g. EF_-0.3
+    inputs_folder = os.path.join(base_dir, index_folder, ef_folder, 'inputs')
+    os.makedirs(inputs_folder, exist_ok=True)
+    # Create outputs folder at the same level as inputs
+    outputs_folder = os.path.join(base_dir, index_folder, ef_folder, 'outputs')
+    os.makedirs(outputs_folder, exist_ok=True)
+    
+    # 2. Load the Excel template
+    template_path = os.path.join(base_dir, template_file)
+    if not os.path.exists(template_path):
+        sys.exit(f"Template file not found: {template_path}")
+        
+    from openpyxl import load_workbook    
+    wb = load_workbook(template_path)
+    dft_sheet = wb["species"]
+    
+    # 3. Replace data in the sheet: get keys from column A, replace potential energy in column L"
+    # print(f"✅ Fill the Excel Template File")
+    
+    missing_keys = []
+    for row in dft_sheet.iter_rows(min_row=2, min_col=1, max_col=12):
+        key_cell = row[0]    # Column A (key)
+        target_cell = row[11]  # Column L (the value to replace)
+        key = key_cell.value
+        if key in replacement_dict:
+            target_cell.value = replacement_dict[key]
+            # if verbose:
+                # print(f"✅ Replace: {key} -> {replacement_dict[key]:.6f}")
         else:
-            results.append(True)
-    return all(results)
-
-
-def filter_exposed_rhombus(candidates, atoms, height=2.5):
-    """
-    Filter candidate rhombus configurations based on their exposure.
+            missing_keys.append(key)
+            
+    # for key in missing_keys:
+        # print(f"  - {key}")
     
-    For each candidate (a list of four atom indices), this function uses is_exposed_rhombus()
-    to determine whether the configuration is exposed.
+    # 4. Save the updated Excel file into the inputs folder
+    output_path = os.path.join(inputs_folder, 'NH3_Input_Data.xlsx')
+    wb.save(output_path)
+    # print(f"📁 File saved to: {output_path}")
     
-    Parameters:
-        candidates (list): List of candidate rhombus configurations (each is a list [A, B, C, D]).
-        atoms: An ASE Atoms object.
-        height (float): Height threshold (in Å) for exposure.
+    # 5. Copy files to the outputs folder (from base_dir)
+    for filename in ["NH3_MKM_Ru45.py"]:
+        src = os.path.join(base_dir, filename)
+        dst = os.path.join(outputs_folder, filename)
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
+            # if verbose:
+                # print(f"✅ Copied {filename} to {outputs_folder}")
+        # else:
+            # print(f"⚠️ File {filename} not found!")
     
-    Returns:
-        tuple: (exposed_candidates, not_exposed_candidates)
-            - exposed_candidates: List of candidates that are exposed.
-            - not_exposed_candidates: List of candidates that are not exposed.
-    """
-    exposed = []
-    not_exposed = []
-    for candidate in candidates:
-        if is_exposed_rhombus(atoms, candidate, height):
-            exposed.append(candidate)
-        else:
-            not_exposed.append(candidate)
-    return exposed, not_exposed
-
-
-def filter_rhombus_by_exposure(planar, non_planar, atoms, height=2.5):
-    """
-    Given planar and non-planar candidate rhombus configurations, further filter them based on exposure.
-    If a candidate is not exposed (i.e. is_exposed_rhombus() returns False), remove it from both groups
-    and add it to the invalid_rhombus list.
-
-    Parameters:
-        planar (list): List of candidate rhombus configurations classified as planar.
-        non_planar (list): List of candidate configurations classified as non-planar.
-        atoms: An ASE Atoms object.
-        height (float): Height threshold (in Å) for exposure.
+    # Copy OpenMKM_IO.py to the folder: mkm_inputs/index_folder/ef_folder
+    src_IO = os.path.join(base_dir, "OpenMKM_IO.py")
+    dst_IO_dir = os.path.join(base_dir, index_folder, ef_folder)
+    dst_IO = os.path.join(dst_IO_dir, "OpenMKM_IO.py")
+    if os.path.exists(src_IO):
+        shutil.copy2(src_IO, dst_IO)
+    #     if verbose:
+    #         print(f"✅ Copied OpenMKM_IO.py to {dst_IO_dir}")
+    # else:
+    #     print("⚠️ File OpenMKM_IO.py not found!")
     
-    Returns:
-        tuple: (planar_exposed, non_planar_exposed, invalid_rhombus)
-            - planar_exposed: List of planar candidates that are exposed.
-            - non_planar_exposed: List of non-planar candidates that are exposed.
-            - invalid_rhombus: List of candidates that are not exposed.
-    """
-    exposed_planar, not_exposed_planar = filter_exposed_rhombus(planar, atoms, height)
-    exposed_non_planar, not_exposed_non_planar = filter_exposed_rhombus(non_planar, atoms, height)
-    invalid_rhombus = not_exposed_planar + not_exposed_non_planar
-    return exposed_planar, exposed_non_planar, invalid_rhombus
-
-
-def write_indices_to_file(file_path, indices_list):
-    with open(file_path, 'w') as file:
-        for indices in indices_list:
-            text = ' '.join(map(str, indices))
-            file.write(text + '\n')
-
-def calculate_normal_vector_TOP(anchor_atom_index, cluster, cutoff):
-    # Extract the position of the anchor atom
-    anchor_atom = cluster[anchor_atom_index]
-    anchor_position = anchor_atom.position
+    # 6. Workflow:
+    main_folder = os.path.join(base_dir, index_folder, ef_folder)    
     
-    # Find neighbors within the cutoff distance
-    neighbors = []
-    for neighbor in cluster:
-        if not np.array_equal(neighbor.position, anchor_position):  # Ensure the neighbor is not the anchor atom
-            vector = neighbor.position - anchor_position
-            distance = np.linalg.norm(vector)
-            if distance < cutoff:
-                neighbors.append(neighbor.position)
+    # 6.1 Change to main_folder and execute "python3 OpenMKM_IO.py"
+    # print("✅ Generating the MKM inputs...")
+    # subprocess.run(["python3", "OpenMKM_IO.py"], cwd=main_folder, check=True)
+    prepare_yaml(main_folder)
     
-    # Ensure we have enough neighbors to define a plane
-    if len(neighbors) < 3:
-        raise ValueError("Not enough neighbors to define a plane.")
+    # # 6.2 Instead of running "bash modify.sh", update the YAML file.
+    # yaml_file = os.path.join(main_folder, "outputs", "thermo.yaml")
+    # print("✅ Updating YAML file in outputs folder...")
+    # update_yaml(yaml_file)
     
-    # Perform PCA on the neighbors to find the plane
-    neighbors = np.array(neighbors)
-    pca = PCA(n_components=3)
-    pca.fit(neighbors)
+    # 6.3 In outputs folder, run "python3 NH3_v2.py 600 > mkm.out"
+    # print("✅ Running MKM...")
+    #T = 400   # Celcius
+    #run_mkm(main_folder, T)
+    # subprocess.run("python3 NH3_v2.py 600 > mkm.out", cwd=outputs_folder, shell=True, check=True)
     
-    # The normal vector to the plane is the third principal component
-    normal_vector = pca.components_[2]
-    
-    # Normalize the normal vector
-    normal_vector /= np.linalg.norm(normal_vector)
-    
-    return normal_vector
+    # print("✅ Workflow completed!\n")
 
-def calculate_normal_vector_bri(atom_index, cluster, cutoff):
-    vector_sum = np.zeros(3)
-    atom = cluster[atom_index]
-
-    for neighbor in cluster:
-        if neighbor != atom:
-            vector = atom.position - neighbor.position
-            distance = np.linalg.norm(vector)
-            if distance < cutoff and distance > 0:  # Avoid zero division
-                vector_sum += vector / distance
-
-    if np.linalg.norm(vector_sum) > 0:
-        return vector_sum / np.linalg.norm(vector_sum)
-    else:
-        return np.array([0, 0, 1])  # Default to z-direction
-
-def count_short_metal_nonmetal_bonds(cluster, metal='Ru', max_distance=1.6):
-    """
-    Count the number of bonds shorter than a specific distance between metal atoms and non-metal atoms in the cluster.
-
-    Parameters:
-    - cluster (ASE Atoms object): The cluster of atoms.
-    - metal_symbol (str): Symbol of the metal atoms in the cluster.
-    - max_distance (float): The maximum distance threshold for bond counting.
-
-    Returns:
-    - count (int): Number of bonds shorter than max_distance between metal atoms and non-metal atoms.
-    """
-    # Find indices of metal and non-metal atoms
-    metal_indices = [i for i, atom in enumerate(cluster) if atom.symbol == metal]
-    nonmetal_indices = [i for i, atom in enumerate(cluster) if atom.symbol != metal]
-
-    count = 0
-
-    # Calculate distances between metal and non-metal atoms
-    for i in metal_indices:
-        for j in nonmetal_indices:
-            distance = cluster.get_distance(i, j, mic=True)
-            if distance < max_distance:
-                count += 1
-    return count
-
-def find_shortest_bond(atoms, cutoff=2.5):
-    # read POSCAR
-    # atoms = read(path)
-    
-    # get the index for N
-    n_index = None
-    ru_indices = []
-    
-    for i, atom in enumerate(atoms):
-        if atom.symbol == 'N':
-            n_index = i
-        elif atom.symbol == 'Ru':
-            ru_indices.append(i)
-
-    if n_index is None:
-        raise ValueError("No nitrogen (N) atom found in the POSCAR file.")  
-
-    #Calculate the distance between N and each Ru atom, and filter out the distances that are less than the cutoff.
-    distances = []
-
-    for ru_index in ru_indices:
-        distance = atoms.get_distance(n_index, ru_index, mic=True)
-        if distance < cutoff:
-            distances.append((ru_index, distance))
-
-    
-    ##"Sort by distance and find the shortest distance."
-    if distances:
-        distances.sort(key=lambda x: x[1])
-        shortest_distance = distances[0]
-        num_short_bonds = len(distances)
-    else:
-        shortest_distance = None
-        num_short_bonds = 0
-
-    return shortest_distance, num_short_bonds
-
-
-##################=========================
-
-def add_anchor_to_single_site_bri(poscar_path,exposed_indexs, metal='Ru', anchor_atom='N', output_prefix='POSCAR'):
-    cluster = read(poscar_path)
-    cutoff = 3.0  # Adjust based on your system
-    modified_cluster = copy.deepcopy(cluster)
-    def get_geo(modified_cluster, exposed_indexs):
-
-        A = modified_cluster[exposed_indexs[0] ]  # Adjust index for 0-based indexing
-        B = modified_cluster[exposed_indexs[1] ]  
-        
-        translation_vector = B.position - A.position
-        # Calculate the normal vector for positioning the N atom
-        normal_vector = calculate_normal_vector_bri(exposed_indexs[0] , modified_cluster, cutoff)
-    
-        # Position for N atom
-        anchor_position = A.position + normal_vector * 1.6 +  0.5 * translation_vector  
-        
-        # Add N atom to the structure
-        modified_cluster += Atoms(anchor_atom, positions=[anchor_position])
-        return modified_cluster
-
-    modified_cluster = copy.deepcopy(cluster)
-    cluster_1 = get_geo(modified_cluster, exposed_indexs)
-    num_bonds_1 = count_short_metal_nonmetal_bonds(cluster_1, metal, max_distance=1.6) 
-
-    modified_cluster = copy.deepcopy(cluster)
-    cluster_2 = get_geo(modified_cluster, exposed_indexs[::-1])
-    
-    num_bonds_2 = count_short_metal_nonmetal_bonds(cluster_2, metal, max_distance=1.6) 
-
-    final_cluster = cluster_1
-    if num_bonds_1 > num_bonds_2: 
-        final_cluster = cluster_2 
-
-    shortest_distance, num_short_bonds = find_shortest_bond(final_cluster, 2.5)
-    # print(shortest_distance, num_short_bonds)
-    if shortest_distance[1] > 1.5 and num_short_bonds < 3:     
-        destination_path = os.path.join('bri', '_'.join([str(i) for i in exposed_indexs])) 
-        os.makedirs(destination_path, exist_ok=True)
-        output_file = destination_path + '/POSCAR'
-    
-        write(output_file, final_cluster, format='vasp', vasp5=True)
-
-def add_one_bri(path, exposed_indices):
-    poscar_path = path +'/POSCAR_bare'
-    cluster = read(poscar_path)
-    os.makedirs(path + '/bri', exist_ok=True)
-    for combination in itertools.combinations(exposed_indices, 2):
-        ## get the atoms that form the hollow site 
-        sorted_combination = sorted(combination)
-        bri_atom_indices = [i  for i in sorted_combination] # indice count from 0
-        bri_atoms_positions = [cluster[i].position for i in bri_atom_indices]
-
-        if not is_valid_bri(bri_atoms_positions):
-            continue
-        
-        add_anchor_to_single_site_bri(poscar_path,sorted_combination,output_prefix='POSCAR')
- 
-def get_new_coordiates(cluster, A1, A2, B1, list_H):
-    '''A1, A2, B1 are the coordinates, list_H is the list of coordinates '''
-    # Calculate B2 as the center (midpoint) of C and D
-    B2 = calculate_triangle_center(list_H) 
-    translation_vector = A2 - B1
-    B2_translated = B2 + translation_vector 
-    
-    # Step 2: Calculate vectors a and b
-    a = A2 - A1
-    a_normalized = a / np.linalg.norm(a)
-    b = B2_translated - A2  # New b after moving B1 to A2
-    b_normalized = b / np.linalg.norm(a)
-    
-    # Calculate rotation axis and angle
-    axis = np.cross(b_normalized, a_normalized)
-    
-    axis_normalized = axis / np.linalg.norm(axis) if np.linalg.norm(axis) != 0 else b_normalized
-    
-    angle = np.arccos(np.clip(np.dot(b_normalized, a_normalized), -1.0, 1.0))     # Angle of rotation
-    
-    # Apply rotation around A2
-    rotation = R.from_rotvec(axis_normalized * angle)
-    
-    new_list_H = [rotation.apply(i - B1) + A2 for i  in cluster.get_positions()[1:]]
-    
-    return new_list_H# C_final, D_final, E_final
-
-def add_more_atoms(site):
-    ''' Add species with more than three atoms to the anchor atoms. This function works for top, bri, and hollows sites '''
-    sites = [int(i)  for i in site.split('_')]
-    atoms = read(site + '/POSCAR')
-    coordinates = [atoms[i].position for i in sites]
-    A1 = calculate_triangle_center(coordinates)  # fcc site 
-    A2 = atoms[-1].position     # N site, add N first and then put the NH,NH2,NH3 et al using the N site as reference.
-
-    atoms_temp = read('../POSCAR_temp')
-    B1 = atoms_temp[0].position
-
-    # Initialize list_H to store atoms forming bonds with atoms_temp[0]
-    list_H = []
-    # Define bond distance threshold
-    bond_distance = 1.9  # in Ångstroms
-    positions = atoms_temp.get_positions()
-
-    # Iterate over all atoms except the first one (atoms_temp[0])
-    for i in range(1, len(positions)):
-        atom_position = positions[i]
-        distance = euclidean(B1, atom_position)
-        
-        if distance <= bond_distance:
-            list_H.append(atom_position)
-    
-    # Convert list_H to numpy array if needed
-    list_H = np.array(list_H)
-    
-    new_list_H  = get_new_coordiates(atoms_temp, A1, A2, B1, list_H)
-    list_ele = atoms_temp.get_chemical_symbols()[1:]
-    out_geo = copy.deepcopy(atoms)
-    
-    for num, coord in enumerate(new_list_H):
-        out_geo += Atoms(list_ele[num], positions=[coord])
-        
-    write(site+'/POSCAR_bri', out_geo, format='vasp', vasp5=True)
-
-def add_more_bri(path):
-    """Add larger moelcules to all the bridge sites. The sites are the folders generated by the add_one_bri function"""
-    os.chdir(path + '/bri')
-    all_items = os.listdir('.')
-    folders = [item for item in all_items if os.path.isdir(item)]
-    folders = [folder for folder in folders if folder.count('_') == 1]
-        
-    for site in folders:     
-        add_more_atoms(site)
-        
-def get_active_sites(cluster_path,metal = 'Ru'):   # Path: the cluster model directory
-    poscar = os.path.join(cluster_path, 'POSCAR')
-    atoms = read(poscar)
-    bond_length_threshold = 2.7
-    
-
-    """ Step1: obtain the top sites""" 
-    list_file = os.path.join(cluster_path, 'list')   ### list all the top sites in one line
-    if not os.path.exists(list_file):
-        # print("Warning: No list file found. Examine the exposed sites using Coordination Numbers.")
-        top_indices = get_top_sites(atoms, metal, mult=0.9)  ## Seems that this method is not ideal
-    else:
-        with open(list_file, 'r') as f_in:
-            top_indices = f_in.readline().rstrip().split()
-            top_indices = [int(i) for i in top_indices]
-            surface_indices = [i-1 for i in top_indices]
- 
-    """ Step2: obtain the bridge sites """     
-    bridge_list = []
-    for combination in itertools.combinations(top_indices, 2):
-        ## get the atoms that form the hollow site 
-        sorted_combination = sorted(combination)
-        distance = atoms.get_distance(sorted_combination[0], sorted_combination[1])
-        if distance < 2.6:
-            bridge_list.append(sorted_combination)
-
-    l_rhombus  = []
-    for bridge_site in bridge_list: 
-        B, D  =  bridge_site[:]
-        indices = find_rhombus(atoms, top_indices, B, D, bond_threshold=3.0)
-        l_rhombus.append(indices)
-       
-    l_rhombus = [item for item in l_rhombus if item] ## remove the empty 
-
-    ############## Step3: categorize  rhombus sites: planar or edge
-    planar, non_planar = filter_rhombus_by_dihedral(l_rhombus, atoms, dihedral_threshold=120)
-    new_planar, new_non_planar, invalid_rhombus = filter_rhombus_by_AC_BD(planar, non_planar, atoms, AC_cutoff=3.0)
-    # coplanar_threshold = 0.5  # Adjust threshold as needed, unit is Å
-    # coplanar_rhombus = filter_coplanar_rhombuses(l_rhombus, atoms, coplanar_threshold)
-    # edge_rhombus = filter_rhombuses_by_dihedral(l_rhombus, atoms, 40, 120)
-
-    write_indices_to_file(os.path.join(cluster_path, 'all_sites.txt'), l_rhombus)
-    write_indices_to_file(os.path.join(cluster_path, 'planar_sites.txt'), new_planar)
-    write_indices_to_file(os.path.join(cluster_path, 'edge_sites.txt'), new_non_planar)
-    write_indices_to_file(os.path.join(cluster_path, 'invalid_sites.txt'), invalid_rhombus)
-
-    return l_rhombus, new_planar, new_non_planar
+#############
 
 ################## Section MKM
 
@@ -2594,1117 +1999,3 @@ def get_rate(kf0, kr0):
     # print("XNH3:", X_t[-1], )
 
     return rates
-
-
-
-#### Construct adsorption configurations 
-
-
-# Define bonding criteria (in Angstrom)
-R_N_BOND_MAX = 2.4  # Max Ru-N bond distance
-R_H_BOND_MAX = 2.2  # Max Ru-H bond distance
-N_N_BOND_MAX = 1.4  # Max N-N bond distance for N2 detection
-
-def get_bonded_atoms(atoms, atom_index, element, cutoff):
-    """Find all atoms of a given element bonded to a specified atom."""
-    bonded = []
-    for i, atom in enumerate(atoms):
-        if atom.symbol == element and i != atom_index:
-            dist = atoms.get_distance(atom_index, i)
-            if dist < cutoff:
-                bonded.append(i)
-    return bonded
-
-
-
-def classify_single_atom_adsorption(atoms, element, bond_cutoff):
-    """Classify adsorption of single atoms (N or H) based on Ru coordination."""
-    atom_indices = [i for i, atom in enumerate(atoms) if atom.symbol == element]
-    results = []
-
-    for idx in atom_indices:
-        ru_bonded = get_bonded_atoms(atoms, idx, "Ru", bond_cutoff)
-
-        # Determine adsorption type
-        if len(ru_bonded) == 1:
-            adsorption_type = "top"
-        elif len(ru_bonded) == 2:
-            adsorption_type = "bridge"
-        elif len(ru_bonded) == 3:
-            adsorption_type = "hollow"
-        else:
-            adsorption_type = "unknown"
-
-        ru_site_str = format_ru_sites(ru_bonded)
-        results.append((idx, adsorption_type, ru_site_str))
-
-    # return results
-    return ru_site_str
-
-
-def format_ru_sites(ru_indices):
-    """Convert a list of Ru indices into a sorted string format."""
-    ru_indices = [i + 1 for i in ru_indices]  # Convert to 1-based index
-    ru_indices.sort()  # Sort in ascending order
-    return "_".join(map(str, ru_indices)) if ru_indices else "N/A"
-
-def is_valid_bridge3(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
-    """
-    Check if N2 forms a Bridge-3 adsorption:
-    - Both N atoms bind to the same two Ru atoms.
-    - N2 bond is at an angle between 75°-90° relative to Ru-Ru bond.
-
-    Returns:
-        True  -> Valid Bridge-3
-        False -> Not a Bridge-3
-    """
-    if set(ru_bonded_n1) != set(ru_bonded_n2):
-        return False  # Ensure both N atoms are bonded to the same two Ru atoms
-
-    ru1, ru2 = ru_bonded_n1  # Get the two Ru atoms
-
-    # Get atomic positions
-    n1_pos = atoms[n1].position
-    n2_pos = atoms[n2].position
-    ru1_pos = atoms[ru1].position
-    ru2_pos = atoms[ru2].position
-
-    # Compute N2 and Ru-Ru vectors
-    n2_vector = n2_pos - n1_pos
-    n2_vector /= np.linalg.norm(n2_vector)
-
-    ru_vector = ru2_pos - ru1_pos
-    ru_vector /= np.linalg.norm(ru_vector)
-
-    # Compute angle in degrees
-    angle_rad = np.arccos(np.clip(np.dot(n2_vector, ru_vector), -1.0, 1.0))
-    angle_deg = np.degrees(angle_rad)
-
-    return 75 <= angle_deg <= 115  # Allow angle range between 75°-90°
-
-
-
-# def is_valid_fcc0(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
-#     """
-#     Check if N2 forms an FCC-0 adsorption:
-#     - N1 binds to two Ru atoms (A, B).
-#     - N2 binds to a third, separate Ru atom (C), instead of one of (A, B).
-
-#     Returns:
-#         True  -> Valid FCC-0
-#         False -> Not an FCC-0 site (likely Bridge-2)
-#     """
-#     if len(ru_bonded_n1) != 2 or len(ru_bonded_n2) != 2:
-#         return False  # Ensure N1 and N2 each bind to exactly two Ru atoms
-
-#     # Get the two Ru atoms bound to N1 (A, B)
-#     ru_n1_set = set(ru_bonded_n1)
-
-#     # Get the two Ru atoms bound to N2 (should include C)
-#     ru_n2_set = set(ru_bonded_n2)
-
-#     # **For Bridge-2: N2 must bind to both A and B**
-#     if ru_n2_set.issubset(ru_n1_set):
-#         return False
-
-#     # **For FCC-0: N2 must bind to a third Ru (C) instead of both A and B**
-#     return True
-
-def is_valid_fcc0(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
-    """
-    Check if N2 forms an FCC-0 adsorption:
-    - One N (N1 or N2) binds to two Ru atoms (A, B).
-    - The other N (N2 or N1) binds to a third, separate Ru atom (C), instead of both A and B.
-
-    Returns:
-        True  -> Valid FCC-0
-        False -> Not an FCC-0 site (likely Bridge-2)
-    """
-    if len(ru_bonded_n1) != 2 or len(ru_bonded_n2) != 1:
-        if len(ru_bonded_n1) != 1 or len(ru_bonded_n2) != 2:
-            return False  # Ensure N1 binds to two Ru, and N2 binds to one OR vice versa
-
-    # Get the two Ru atoms bound to N1 (A, B) and the single Ru bound to N2 (C)
-    ru_n1_set = set(ru_bonded_n1)
-    ru_n2_set = set(ru_bonded_n2)
-
-    # **For FCC-0: N2 must bind to a separate Ru (C) not in (A, B)**
-    return len(ru_n1_set.intersection(ru_n2_set)) == 0
-
-def is_valid_rhombus_site(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
-    """
-    Check if N2 forms a Rhombus adsorption:
-    - N1 binds to three Ru atoms (A, B, C).
-    - N2 binds to one of (A, B, C) and a new Ru atom (D).
-    - Distinguishes from FCC-2 where N2 binds to two of (A, B, C).
-
-    Returns:
-        True  -> Valid Rhombus site
-        False -> Not a Rhombus site (likely FCC-2)
-    """
-    if len(ru_bonded_n1) != 3 or len(ru_bonded_n2) != 2:
-        return False  # Ensure correct Ru coordination
-
-    # Get the three Ru atoms bound to N1 (A, B, C)
-    ru_n1_set = set(ru_bonded_n1)
-
-    # Get the two Ru atoms bound to N2
-    ru_n2_set = set(ru_bonded_n2)
-
-    # **Check if N2 binds to only one of (A, B, C) and one new Ru (D)**
-    common_rus = ru_n1_set.intersection(ru_n2_set)
-    unique_rus = ru_n2_set.difference(ru_n1_set)
-
-    return len(common_rus) == 1 and len(unique_rus) == 1
-
-
-
-def classify_N2_adsorption(atoms):
-    """Classify N2 adsorption types and format Ru sites as strings."""
-    nitrogen_indices = [i for i, atom in enumerate(atoms) if atom.symbol == "N"]
-    # print('N2', nitrogen_indices)
-    # Pair N atoms into N2 molecules based on N-N bonding distance
-    n2_molecules = []
-    visited = set()
-    for i in nitrogen_indices:
-        if i in visited:
-            continue
-        for j in nitrogen_indices:
-            if i != j and atoms.get_distance(i, j) < N_N_BOND_MAX:
-                n2_molecules.append((i, j))
-                visited.add(i)
-                visited.add(j)
-                break
-
-    results = []
-    
-    for n1, n2 in n2_molecules:
-        
-        ru_bonded_n1 = get_bonded_atoms(atoms, n1, "Ru", R_N_BOND_MAX)
-        ru_bonded_n2 = get_bonded_atoms(atoms, n2, "Ru", R_N_BOND_MAX)
-        
-        # **Normalize Bond Counts** (Handle N1/N2 ordering issue)
-        bond_counts = tuple(sorted([len(ru_bonded_n1), len(ru_bonded_n2)]))
-        
-        
-        # **Check for Gas-Phase N2**
-        if atoms.get_distance(n1, n2) < 1.3 and len(ru_bonded_n1) == 0 and len(ru_bonded_n2) == 0:
-            adsorption_type = "gas"
-            ru_site_str = "N/A"
-        
-        # **Classify Adsorption Type**
-        elif bond_counts == (0, 1):
-            adsorption_type = "top"
-            ru_site_str = format_ru_sites(ru_bonded_n1 if len(ru_bonded_n1) == 1 else ru_bonded_n2)
-        elif bond_counts == (1, 1) and ru_bonded_n1 == ru_bonded_n2:
-            adsorption_type = "top"
-            ru_site_str = format_ru_sites(ru_bonded_n1)  # One Ru index
-        elif bond_counts == (1, 1):
-            adsorption_type = "bridge-1"
-            ru_site_str = format_ru_sites(list(set(ru_bonded_n1 + ru_bonded_n2)))  # Two Ru atoms
-        
-        elif bond_counts == (0, 2):
-            # **Bridge-0: One N binds to two Ru atoms, the other is in the gas phase**
-            adsorption_type = "bridge-0"
-            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
-    
-        elif bond_counts == (1, 2):
-            # **Distinguish between FCC-0 and Bridge-2**
-            if is_valid_fcc0(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
-                adsorption_type = "fcc-0"
-            else:
-                adsorption_type = "bridge-2"
-            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
-        elif bond_counts == (2, 2):
-            # **Bridge-3 detection (Both N bind to the same two Ru atoms & angle between 75°-90°)**
-            if is_valid_bridge3(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
-                adsorption_type = "bridge-3"
-                ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))
-            else:
-                if len(set(ru_bonded_n1 + ru_bonded_n2)) == 3:
-                    adsorption_type = "fcc-1"
-                    ru_site_str = format_ru_sites(list(set(ru_bonded_n1 + ru_bonded_n2)))  # Three Ru atoms
-                elif len(set(ru_bonded_n1 + ru_bonded_n2)) == 4:
-                    adsorption_type = "trapezoid-1"
-                    ru_site_str = format_ru_sites(list(set(ru_bonded_n1 + ru_bonded_n2)))  # Three Ru atoms
-                    
-                else:
-                    adsorption_type = "unknown"
-                    ru_site_str = "N/A"
-        elif bond_counts == (2, 3):
-            # **Distinguish between FCC-2 and Rhombus**
-            if is_valid_rhombus_site(atoms, n1, n2, ru_bonded_n1, ru_bonded_n2):
-                adsorption_type = "rhombus"
-            else:
-                adsorption_type = "fcc-2"
-            ru_site_str = format_ru_sites(set(ru_bonded_n1 + ru_bonded_n2))  # Three Ru atoms
-        elif bond_counts == (1, 3):
-            adsorption_type = "fcc-3"
-            ru_site_str = format_ru_sites(list(set(ru_bonded_n1 + ru_bonded_n2)))  # Three Ru atoms
-        else:
-            adsorption_type = "unknown"
-            ru_site_str = "N/A"
-
-        #results.append((n1, n2, adsorption_type, ru_site_str))
-        results.append((adsorption_type, ru_site_str))
-
-    return results   
-
-
-def get_shortest_ru_n_distance(atoms):
-    """Get the shortest Ru-N distance in the given structure."""
-    ru_indices = [i for i, atom in enumerate(atoms) if atom.symbol == 'Ru']
-    n_indices = [i for i, atom in enumerate(atoms) if atom.symbol == 'N']
-
-    min_distance = float('inf')
-    for ru in ru_indices:
-        for n in n_indices:
-            distance = atoms.get_distance(ru, n)
-            if distance < min_distance:
-                min_distance = distance
-
-    return min_distance
-
-def add_N2_top_sites(atoms, n_ru_distance=2.0, n_n_distance=1.19, metal='Ru'):
-    """
-    Add N2 molecules at top adsorption sites (Top1 and Top2).
-    """
-
-    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal=metal, mult=0.9)
-    mass_center = np.mean([atom.position for atom in atoms if atom.symbol == 'Ru'], axis=0)
-
-    for i, ru_index in enumerate(top_sites):
-        pos_top = atoms[ru_index].position  # Ru atom serving as the top site
-        direction = pos_top - mass_center
-        direction /= np.linalg.norm(direction)
-
-        if np.dot(direction, pos_top - mass_center) < 0:
-            direction = -direction  # Flip direction if needed
-
-        ### **Top1 Placement**
-        n1_position_top1 = pos_top + direction * n_ru_distance
-        n2_position_top1 = n1_position_top1 + direction * n_n_distance
-        n2_top1 = Atoms('N2', positions=[n1_position_top1, n2_position_top1])
-
-        new_atoms_top1 = atoms.copy()
-        new_atoms_top1.extend(n2_top1)
-
-        if get_shortest_ru_n_distance(new_atoms_top1) < 1.5:
-            write(f"POSCAR_top1_{i+1}_check1", new_atoms_top1, format='vasp')
-            direction = -direction
-            n1_position_top1 = pos_top + direction * n_ru_distance
-            n2_position_top1 = n1_position_top1 + direction * n_n_distance
-            n2_top1 = Atoms('N2', positions=[n1_position_top1, n2_position_top1])
-            new_atoms_top1 = atoms.copy()
-            new_atoms_top1.extend(n2_top1)
-
-            if get_shortest_ru_n_distance(new_atoms_top1) < 1.5:
-                write(f"POSCAR_top1_{i+1}_check2", new_atoms_top1, format='vasp')
-            else:
-                write(f"POSCAR_top1_{i+1}.vasp", new_atoms_top1, format='vasp')
-        else:
-            write(f"POSCAR_top1_{i+1}.vasp", new_atoms_top1, format='vasp')
-
-        ### **Top2 Placement**
-        nn_center = pos_top + direction * n_ru_distance
-        perp_vector = np.cross(direction, [0, 0, 1])
-        if np.linalg.norm(perp_vector) < 1e-6:
-            perp_vector = np.cross(direction, [1, 0, 0])
-        perp_vector /= np.linalg.norm(perp_vector)
-
-        n1_position_top2 = nn_center - perp_vector * (n_n_distance / 2)
-        n2_position_top2 = nn_center + perp_vector * (n_n_distance / 2)
-        n2_top2 = Atoms('N2', positions=[n1_position_top2, n2_position_top2])
-
-        new_atoms_top2 = atoms.copy()
-        new_atoms_top2.extend(n2_top2)
-
-        write(f"POSCAR_top2_{i+1}.vasp", new_atoms_top2, format='vasp')
-
-def add_N2_bridge_sites(atoms, n_ru_distance=2.15, n_n_distance=1.19):
-    """
-    Add N2 molecules at bridge adsorption sites (Bridge-1, Bridge-2, Bridge-3, FCC-0).
-    """
-
-    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal=metal, mult=0.9)
-    mass_center = np.mean([atom.position for atom in atoms if atom.symbol == 'Ru'], axis=0)
-
-    for i, (ru1, ru2) in enumerate(bridge_sites):
-        pos1, pos2 = atoms[ru1].position, atoms[ru2].position
-        bridge_mid = (pos1 + pos2) / 2
-        direction = bridge_mid - mass_center
-        direction /= np.linalg.norm(direction)
-
-        ### **Bridge-1 Placement (Parallel to Ru-Ru)**
-        nn_center = bridge_mid + direction * n_ru_distance
-        ru_vector = pos2 - pos1
-        ru_vector /= np.linalg.norm(ru_vector)
-
-        n1_position_bridge1 = nn_center - ru_vector * (n_n_distance / 2)
-        n2_position_bridge1 = nn_center + ru_vector * (n_n_distance / 2)
-        n2_bridge1 = Atoms('N2', positions=[n1_position_bridge1, n2_position_bridge1])
-
-        new_atoms_bridge1 = atoms.copy()
-        new_atoms_bridge1.extend(n2_bridge1)
-
-        if get_shortest_ru_n_distance(new_atoms_bridge1) < 1.5:
-            write(f"POSCAR_bridge1_{i+1}_check1", new_atoms_bridge1, format='vasp')
-            direction = -direction
-            n1_position_bridge1 = nn_center - ru_vector * (n_n_distance / 2)
-            n2_position_bridge1 = nn_center + ru_vector * (n_n_distance / 2)
-            n2_bridge1 = Atoms('N2', positions=[n1_position_bridge1, n2_position_bridge1])
-            new_atoms_bridge1 = atoms.copy()
-            new_atoms_bridge1.extend(n2_bridge1)
-
-            if get_shortest_ru_n_distance(new_atoms_bridge1) < 1.5:
-                write(f"POSCAR_bridge1_{i+1}_check2", new_atoms_bridge1, format='vasp')
-            else:
-                write(f"POSCAR_bridge1_{i+1}.vasp", new_atoms_bridge1, format='vasp')
-        else:
-            write(f"POSCAR_bridge1_{i+1}.vasp", new_atoms_bridge1, format='vasp')
-
-        ### **Bridge-2 & FCC-0 Placement**
-        possible_c_rus = [ru for ru in connections[ru1] if ru != ru2] + [ru for ru in connections[ru2] if ru != ru1]
-
-        if possible_c_rus:  # Ensure a third Ru atom exists
-            ru3 = possible_c_rus[0]  # Select one possible C atom
-            pos3 = atoms[ru3].position
-
-            if is_valid_fcc0(atoms, ru1, ru2, [ru1, ru2], [ru3]):  
-                adsorption_type = "fcc-0"
-                filename = f"POSCAR_fcc0_{i+1}.vasp"
-            else:
-                adsorption_type = "bridge-2"
-                filename = f"POSCAR_bridge2_{i+1}.vasp"
-
-            n1_position = (pos1 + pos2) / 2 + direction * n_ru_distance
-            n2_position = pos3 + direction * n_ru_distance  # N2 binds to Ru3 in FCC-0 or Ru1/Ru2 in Bridge-2
-
-            n2_new = Atoms('N2', positions=[n1_position, n2_position])
-
-            new_atoms = atoms.copy()
-            new_atoms.extend(n2_new)
-
-            if get_shortest_ru_n_distance(new_atoms) < 1.5:
-                write(f"{filename.replace('.vasp', '_check1.vasp')}", new_atoms, format='vasp')
-                direction = -direction
-                n1_position = (pos1 + pos2) / 2 + direction * n_ru_distance
-                n2_position = pos3 + direction * n_ru_distance
-                n2_new = Atoms('N2', positions=[n1_position, n2_position])
-
-                new_atoms = atoms.copy()
-                new_atoms.extend(n2_new)
-
-                if get_shortest_ru_n_distance(new_atoms) < 1.5:
-                    write(f"{filename.replace('.vasp', '_check2.vasp')}", new_atoms, format='vasp')
-                else:
-                    write(filename, new_atoms, format='vasp')
-            else:
-                write(filename, new_atoms, format='vasp')
-
-        ### **Bridge-3 Placement (N₂ perpendicular to Ru-Ru, both N have 2 Ru-N bonds)**
-        perp_vector = np.cross(ru_vector, direction)
-        perp_vector /= np.linalg.norm(perp_vector)
-
-        nn_center_bridge3 = bridge_mid + direction * n_ru_distance
-        n1_position_bridge3 = nn_center_bridge3 + perp_vector * (n_n_distance / 2)
-        n2_position_bridge3 = nn_center_bridge3 - perp_vector * (n_n_distance / 2)
-        n2_bridge3 = Atoms('N2', positions=[n1_position_bridge3, n2_position_bridge3])
-
-        new_atoms_bridge3 = atoms.copy()
-        new_atoms_bridge3.extend(n2_bridge3)
-
-        if get_shortest_ru_n_distance(new_atoms_bridge3) < 1.5:
-            write(f"POSCAR_bridge3_{i+1}_check1", new_atoms_bridge3, format='vasp')
-            direction = -direction
-            n1_position_bridge3 = nn_center_bridge3 + perp_vector * (n_n_distance / 2)
-            n2_position_bridge3 = nn_center_bridge3 - perp_vector * (n_n_distance / 2)
-            n2_bridge3 = Atoms('N2', positions=[n1_position_bridge3, n2_position_bridge3])
-            new_atoms_bridge3 = atoms.copy()
-            new_atoms_bridge3.extend(n2_bridge3)
-
-            if get_shortest_ru_n_distance(new_atoms_bridge3) < 1.5:
-                write(f"POSCAR_bridge3_{i+1}_check2", new_atoms_bridge3, format='vasp')
-            else:
-                write(f"POSCAR_bridge3_{i+1}.vasp", new_atoms_bridge3, format='vasp')
-        else:
-            write(f"POSCAR_bridge3_{i+1}.vasp", new_atoms_bridge3, format='vasp')
-
-        print(f"Saved POSCAR_bridge3_{i+1}")
-  
-
-def add_hollow_sites(atoms, n_ru_distance=1.95, n_n_distance=1.19, n1_height=1.5,):
-    """
-    Add N2 molecules at hollow adsorption sites (FCC-1, FCC-2, FCC-3).
-    """
-
-    connections, cn_of_connected_atoms, top_sites, bridge_sites, hollow_sites = get_connection(atoms, metal=metal, mult=0.9)
-    ru_positions = np.array([atom.position for atom in atoms if atom.symbol == 'Ru'])
-    mass_center = np.mean(ru_positions, axis=0)
-
-    for i, (ru1, ru2, ru3) in enumerate(hollow_sites):
-        triangle_sites = [ru1, ru2, ru3]
-
-        if not is_exposed_triangle(atoms, triangle_sites, height=2.5):
-            print(f"Skipping hollow site {ru1+1}, {ru2+1}, {ru3+1} (not exposed)")
-            continue
-
-        pos1, pos2, pos3 = atoms[ru1].position, atoms[ru2].position, atoms[ru3].position
-        hollow_center = np.mean([pos1, pos2, pos3], axis=0)
-
-        # **Compute outward direction from mass center to hollow site**
-        direction = hollow_center - mass_center
-        direction /= np.linalg.norm(direction)
-
-        if np.dot(direction, hollow_center - mass_center) < 0:
-            direction = -direction  # Flip direction vector if needed
-
-        normal = np.cross(pos2 - pos1, pos3 - pos1)
-        normal /= np.linalg.norm(normal)
-
-        ### **FCC-1 Placement**
-        n1_position_fcc1 = (pos1 + pos2) / 2 + direction * n_ru_distance
-        n2_position_fcc1 = (pos2 + pos3) / 2 + direction * n_ru_distance
-        n2_fcc1 = Atoms('N2', positions=[n1_position_fcc1, n2_position_fcc1])
-
-        new_atoms_fcc1 = atoms.copy()
-        new_atoms_fcc1.extend(n2_fcc1)
-
-        if get_shortest_ru_n_distance(new_atoms_fcc1) < 1.5:
-            write(f"POSCAR_fcc1_{i+1}_check1", new_atoms_fcc1, format='vasp')
-            direction = -direction
-            n1_position_fcc1 = (pos1 + pos2) / 2 + direction * n_ru_distance
-            n2_position_fcc1 = (pos2 + pos3) / 2 + direction * n_ru_distance
-            n2_fcc1 = Atoms('N2', positions=[n1_position_fcc1, n2_position_fcc1])
-            new_atoms_fcc1 = atoms.copy()
-            new_atoms_fcc1.extend(n2_fcc1)
-
-            if get_shortest_ru_n_distance(new_atoms_fcc1) < 1.5:
-                write(f"POSCAR_fcc1_{i+1}_check2", new_atoms_fcc1, format='vasp')
-            else:
-                write(f"POSCAR_fcc1_{i+1}.vasp", new_atoms_fcc1, format='vasp')
-        else:
-            write(f"POSCAR_fcc1_{i+1}.vasp", new_atoms_fcc1, format='vasp')
-
-        ### **FCC-2 Placement**
-        n1_position_fcc2 = hollow_center + normal * n1_height
-        perp_vector = np.cross(normal, direction)
-        perp_vector /= np.linalg.norm(perp_vector)
-        n2_position_fcc2 = n1_position_fcc2 + perp_vector * n_n_distance
-        n2_fcc2 = Atoms('N2', positions=[n1_position_fcc2, n2_position_fcc2])
-
-        new_atoms_fcc2 = atoms.copy()
-        new_atoms_fcc2.extend(n2_fcc2)
-
-        if get_shortest_ru_n_distance(new_atoms_fcc2) < 1.5:
-            write(f"POSCAR_fcc2_{i+1}_check1", new_atoms_fcc2, format='vasp')
-            direction = -direction
-            n2_position_fcc2 = n1_position_fcc2 + perp_vector * n_n_distance
-            n2_fcc2 = Atoms('N2', positions=[n1_position_fcc2, n2_position_fcc2])
-            new_atoms_fcc2 = atoms.copy()
-            new_atoms_fcc2.extend(n2_fcc2)
-
-            if get_shortest_ru_n_distance(new_atoms_fcc2) < 1.5:
-                write(f"POSCAR_fcc2_{i+1}_check2", new_atoms_fcc2, format='vasp')
-            else:
-                write(f"POSCAR_fcc2_{i+1}.vasp", new_atoms_fcc2, format='vasp')
-        else:
-            write(f"POSCAR_fcc2_{i+1}.vasp", new_atoms_fcc2, format='vasp')
-
-        ### **FCC-3 Placement**
-        n1_position_fcc3 = hollow_center + normal * n1_height
-        closest_ru = min([pos1, pos2, pos3], key=lambda p: np.linalg.norm(p - n1_position_fcc3))
-        n2_position_fcc3 = n1_position_fcc3 + perp_vector * n_n_distance
-        n2_fcc3 = Atoms('N2', positions=[n1_position_fcc3, n2_position_fcc3])
-
-        new_atoms_fcc3 = atoms.copy()
-        new_atoms_fcc3.extend(n2_fcc3)
-
-        if get_shortest_ru_n_distance(new_atoms_fcc3) < 1.5:
-            write(f"POSCAR_fcc3_{i+1}_check1", new_atoms_fcc3, format='vasp')
-            direction = -direction
-            n2_position_fcc3 = n1_position_fcc3 + perp_vector * n_n_distance
-            n2_fcc3 = Atoms('N2', positions=[n1_position_fcc3, n2_position_fcc3])
-            new_atoms_fcc3 = atoms.copy()
-            new_atoms_fcc3.extend(n2_fcc3)
-
-            if get_shortest_ru_n_distance(new_atoms_fcc3) < 1.5:
-                write(f"POSCAR_fcc3_{i+1}_check2", new_atoms_fcc3, format='vasp')
-            else:
-                write(f"POSCAR_fcc3_{i+1}.vasp", new_atoms_fcc3, format='vasp')
-        else:
-            write(f"POSCAR_fcc3_{i+1}.vasp", new_atoms_fcc3, format='vasp')
-
-
-### MKM 
-
-def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
-    """
-    根据吸附态字典和 Ru 的能量，生成 replacement_dict，用于替换 Excel Sheet1 中的数据。
-
-    参数：
-    - adsorption_data: 吸附物字典，格式为 {ads: (site, adsorption_energy, total_energy)}
-
-    返回：
-    - replacement_dict: key 为 Excel 中的 A 列项（如 "NH3(T)"），value 为替换后的能量值（float）
-    """
-    # 固定的 slab 能量
-    # E_slab = -354.40596642
-    E_slab  = -6.2414 * ef_value**2 - 0.01405 * ef_value - 354.4197 
-
-    # 初始化 replacement_dict
-    replacement_dict = {
-        "RU(T)": E_slab
-    }
-
-    # 常规吸附物种
-    for species in ['NH3', 'NH2', 'NH', 'N', 'N2']:
-        if species in adsorption_data:
-            replacement_dict[f"{species}(T)"] = adsorption_data[species][2]
-
-    # H1, H2, H3 -> Hv1(T), Hv2(T), Hv3(T)
-    for i in range(1, 4):
-        h_key = f"H{i}"
-        hv_key = f"Hv{i}(T)"
-        if h_key in adsorption_data:
-            replacement_dict[hv_key] = adsorption_data[h_key][2]
-
-    
-    E_NH3 = adsorption_data['NH3'][2]
-    E_NH2 = adsorption_data['NH2'][2]
-    E_NH = adsorption_data['NH'][2]
-    E_N  = adsorption_data['N'][2]
-    E_N_N = 2 * adsorption_data['N'][2] - E_slab 
-    E_N2 = adsorption_data['N2'][2] 
-    try:
-        E_H1  = adsorption_data['H1'][2]  
-        E_H2  = adsorption_data['H2'][2] 
-        E_H3  = adsorption_data['H3'][2] 
-        E_H   = min([E_H1,E_H2,E_H3])
-    except:
-        E_H   =  adsorption_data['H'][2]
-        
-    replacement_dict['H(T)'] = E_H
-    
-    if float(adsorption_data['NH3'][1]) <= -1.9:
-        print('E_NH3', adsorption_data['NH3'])
-    
-    # print(E_NH3, E_NH2, E_H1, E_slab)
-    
-    replacement_dict['N_N(T)'] = E_N_N
-    
-    print('E_N_ads:', adsorption_data['N'][1])
-    print('E_H_ads:', adsorption_data['H'][1])
-    print('E_N2_ads:', adsorption_data['N2'][1])
-    print('E_NH_ads:', adsorption_data['NH'][1])
-    print('E_NH2_ads:', adsorption_data['NH2'][1])
-    print('E_NH3_ads:', adsorption_data['NH3'][1])
-
-    reaction_energy_1 = E_NH2 + (-6.76668776)/2 - E_NH3 
-    reaction_energy_2 = E_NH  + (-6.76668776)/2 - E_NH2  
-    reaction_energy_3 = E_N   + (-6.76668776)/2 - E_NH  
-    # reaction_energy_4 = E_slab + gas_dict['N2'] - E_N_N  - 0.5
-    reaction_energy_4 = E_N2 - E_N_N  + 0.5 
-
-    # Ea = a * ΔE + b
-    # Ea_params = [
-    #     (0.40, 1.36),  # TS1_NH3(T)
-    #     (0.86, 0.82),  # TS2_NH2(T)
-    #     (0.54, 0.85),  # TS3_NH(T)
-    #     (0.72, 1.35)   # TS4_N2(T)
-    # ]
-    
-    #Ea = [(a1,b1), (a2,b2),] a1: NH3-NH2, a2: NH2-NH, a3: NH-N, a4: N_N-N2
-    Ea_params =    [(0.52, 0.90), (0.86, 0.73), (0.62, 0.75), (0.62, 1.39)]
-    # Ea_param_N0_6 = [(0.53, 0.84), (0.89, 0.72), (0.63, 0.73), (0.82, 1.27)]
-    # Ea_param_P0_6 = [(0.57, 0.92), (0.79, 0.77), (0.59, 0.78), (0.82, 1.27)]
-    
-    # if ef_value == -0.6:
-    #     Ea_param = Ea_param_N0_6
-    
-    # elif ef_value == 0.6:
-    #     Ea_param = Ea_param_P0_6
-    # else:
-    #     Ea_param = Ea_param_0
-    
-    Ea1 = Ea_params[0][0] * reaction_energy_1 + Ea_params[0][1]
-    Ea2 = Ea_params[1][0] * reaction_energy_2 + Ea_params[1][1]
-    Ea3 = Ea_params[2][0] * reaction_energy_3 + Ea_params[2][1]
-    Ea4 = Ea_params[3][0] * reaction_energy_4 + Ea_params[3][1] 
-
-    Ea_list = [Ea1, Ea2, Ea3, Ea4]
-
-    Ea_list = [max(0.01, ea) for ea in Ea_list]
-    
-    # print('Ea', Ea_list)
-    Ea1, Ea2, Ea3, Ea4 = Ea_list
-    print("Ea1:", Ea_list[0])
-    print("Ea2:", Ea_list[1])
-    print("Ea3:", Ea_list[2])
-    print("Ea4:", Ea_list[3])
-    # 过渡态能量
-    replacement_dict['TS1_NH3(T)'] = E_NH3 + Ea1
-    replacement_dict['TS2_NH2(T)'] = E_NH2 + Ea2
-    replacement_dict['TS3_NH(T)']  = E_NH  + Ea3
-    replacement_dict['TS4_N2(T)']  = E_N_N + Ea4
-
-    ref_dict = {k: v - E_slab for k, v in replacement_dict.items()}
-
-    return ref_dict
-
-
-def update_excel_with_replacement(index_list, replacement_dict, ef_value,
-                                  template_file="NH3_temp.xlsx", base_dir="mkm_inputs", verbose=True):
-    """
-    Create a structured directory based on index and EF, update the "species" sheet 
-    in the Excel template with new data, execute additional workflow commands, and save the result.
-    
-    Parameters:
-        index_list: List of indices used for naming subfolders, e.g. [12, 43, 40, 44]
-        replacement_dict: Dictionary with replacement items, e.g. {"NH3(T)": -375.2, ...}
-        ef_value: External EF value (float, can be negative) for naming subfolders (e.g. -0.3)
-        template_file: Excel template file name; now expected to be located inside base_dir.
-        base_dir: Base directory (e.g. "mkm_inputs")
-        verbose: Whether to print verbose output.
-    """
-    # 1. Build directory paths
-    index_folder = "_".join(map(str, index_list))
-    ef_folder = f"EF_{ef_value:.1f}"  # e.g. EF_-0.3
-    inputs_folder = os.path.join(base_dir, index_folder, ef_folder, 'inputs')
-    os.makedirs(inputs_folder, exist_ok=True)
-    
-    # Create outputs folder at the same level as inputs
-    outputs_folder = os.path.join(base_dir, index_folder, ef_folder, 'outputs')
-    os.makedirs(outputs_folder, exist_ok=True)
-    
-    # 2. Load the Excel template
-    template_path = os.path.join(base_dir, template_file)
-    if not os.path.exists(template_path):
-        sys.exit(f"Template file not found: {template_path}")
-        
-    from openpyxl import load_workbook    
-    wb = load_workbook(template_path)
-    dft_sheet = wb["species"]
-    
-    # 3. Replace data in the sheet: get keys from column A, replace potential energy in column L"
-    # print(f"✅ Fill the Excel Template File")
-    
-    missing_keys = []
-    for row in dft_sheet.iter_rows(min_row=2, min_col=1, max_col=12):
-        key_cell = row[0]    # Column A (key)
-        target_cell = row[11]  # Column L (the value to replace)
-        key = key_cell.value
-        if key in replacement_dict:
-            target_cell.value = replacement_dict[key]
-            # if verbose:
-                # print(f"✅ Replace: {key} -> {replacement_dict[key]:.6f}")
-        else:
-            missing_keys.append(key)
-            
-    # for key in missing_keys:
-        # print(f"  - {key}")
-    
-    # 4. Save the updated Excel file into the inputs folder
-    output_path = os.path.join(inputs_folder, 'NH3_Input_Data.xlsx')
-    wb.save(output_path)
-    # print(f"📁 File saved to: {output_path}")
-    
-    # 5. Copy files to the outputs folder (from base_dir)
-    for filename in ["NH3_MKM_Ru45.py"]:
-        src = os.path.join(base_dir, filename)
-        dst = os.path.join(outputs_folder, filename)
-        if os.path.exists(src):
-            shutil.copy2(src, dst)
-            # if verbose:
-                # print(f"✅ Copied {filename} to {outputs_folder}")
-        # else:
-            # print(f"⚠️ File {filename} not found!")
-    
-    # Copy OpenMKM_IO.py to the folder: mkm_inputs/index_folder/ef_folder
-    src_IO = os.path.join(base_dir, "OpenMKM_IO.py")
-    dst_IO_dir = os.path.join(base_dir, index_folder, ef_folder)
-    dst_IO = os.path.join(dst_IO_dir, "OpenMKM_IO.py")
-    if os.path.exists(src_IO):
-        shutil.copy2(src_IO, dst_IO)
-    #     if verbose:
-    #         print(f"✅ Copied OpenMKM_IO.py to {dst_IO_dir}")
-    # else:
-    #     print("⚠️ File OpenMKM_IO.py not found!")
-    
-    # 6. Workflow:
-    main_folder = os.path.join(base_dir, index_folder, ef_folder)    
-    
-    # 6.1 Change to main_folder and execute "python3 OpenMKM_IO.py"
-    # print("✅ Generating the MKM inputs...")
-    # subprocess.run(["python3", "OpenMKM_IO.py"], cwd=main_folder, check=True)
-    prepare_yaml(main_folder)
-    
-    # # 6.2 Instead of running "bash modify.sh", update the YAML file.
-    # yaml_file = os.path.join(main_folder, "outputs", "thermo.yaml")
-    # print("✅ Updating YAML file in outputs folder...")
-    # update_yaml(yaml_file)
-    
-    # 6.3 In outputs folder, run "python3 NH3_v2.py 600 > mkm.out"
-    # print("✅ Running MKM...")
-    #T = 400   # Celcius
-    #run_mkm(main_folder, T)
-    # subprocess.run("python3 NH3_v2.py 600 > mkm.out", cwd=outputs_folder, shell=True, check=True)
-    
-    # print("✅ Workflow completed!\n")
-
-########################################################
-
-# ------------------ Top-Level Full Configuration ------------------
-# def determine_full_configuration(cluster_path, Prop, sites_list=None):
-#     """
-#     Determine the full stable configuration for the reaction chain and return a dictionary
-#     where each species is mapped to a tuple (site, energy):
-#       1. NH3 → NH2 + H      (H determined by NH2)
-#       2. NH2 → NH + H       (H determined by NH)
-#       3. NH  → N + H        (H determined by N)
-#       4. Also determine the N2 adsorption site.
-    
-#     If sites_list is provided (a list of four numbers for atoms A, B, C, D in clockwise order),
-#     it is converted to a mapping for energy predictions.
-    
-#     Returns a dictionary with keys:
-#       "NH3", "NH2", "NH", "N", "N2", "H1", "H2", and "H3".
-#     """
-#     # site_mapping = convert_sites(sites_list) if sites_list is not None else None
-#     site_mapping = convert_sites_triangle_site(sites_list) if sites_list is not None else None
-#     print(site_mapping)
-#     # print('site_mapping', site_mapping)
-#     config_NH3 = determine_NH3_configuration(cluster_path, Prop, site_mapping)
-#     config_NH2 = determine_NH2_configuration(cluster_path, Prop, config_NH3["site"], site_mapping)
-#     config_NH = determine_NH_configuration(cluster_path, Prop, config_NH2["NH2"]["site"], site_mapping)
-#     config_N = determine_N_configuration(cluster_path, Prop, config_NH["NH"]["site"], site_mapping)
-#     config_N2 = determine_N2_configuration(cluster_path, Prop, site_mapping)
-
-#     final_config = {
-#         "NH3": (config_NH3["site"], config_NH3["energy"]),
-#         "NH2": (config_NH2["NH2"]["site"], config_NH2["NH2"]["energy"]),
-#         "NH":  (config_NH["NH"]["site"], config_NH["NH"]["energy"]),
-#         "N":   (config_N["N"]["site"], config_N["N"]["energy"]),
-#         "N2":  (config_N2["site"], config_N2["energy"]),
-#         "H1":  (config_NH2["H1"]["site"], config_NH2["H1"]["energy"]),
-#         "H2":  (config_NH["H2"]["site"], config_NH["H2"]["energy"]),
-#         "H3":  (config_N["H3"]["site"], config_N["H3"]["energy"])
-#     }
-    
-#     return final_config
-
-
-def build_refdict_and_plot_rc(ef_value: float, adsorption_data: dict, outputs_folder: str = "outputs") -> dict:
-    os.makedirs(outputs_folder, exist_ok=True)
-
-    # Gas-phase reference energies
-    E_gas = {"NH3": -19.53586573, "NH2": -13.53307777, "NH": -8.10061060,
-             "N2": -16.62922486, "H2": -6.76668776}
-
-    # Field-dependent slab energy
-    E_slab = -6.2414 * ef_value**2 - 0.01405 * ef_value - 354.4197
-
-    # Adsorbed species energies
-    E_NH3_ads = adsorption_data['NH3'][2]
-    E_NH2_ads = adsorption_data['NH2'][2]
-    E_NH_ads = adsorption_data['NH'][2]
-    E_N_ads = adsorption_data['N'][2]
-    E_H_ads = min(adsorption_data[k][2] for k in ('H1', 'H2', 'H3'))
-    E_N2_ads = adsorption_data['N2'][2]
-
-    # Reaction energies
-    ΔE1 = E_NH3_ads - E_slab - E_gas['NH3']
-    ΔE2 = (E_NH2_ads + E_H_ads - E_slab) - E_NH3_ads
-    ΔE3 = (E_NH_ads + E_H_ads - E_slab) - E_NH2_ads
-    ΔE4 = (E_N_ads + E_H_ads - E_slab) - E_NH_ads
-    ΔE5 = (E_N2_ads + E_slab) - 2 * E_N_ads
-    ΔE6 = -adsorption_data['N2'][1] * 0.5
-    ΔE7 = -adsorption_data['H1'][1] * 1.5
-
-    # Barrier estimation: Ea = a * ΔE + b
-    Ea_param = [(0.42, 1.36), (0.88, 0.82), (0.47, 0.81), (0.87, 2.10)]
-    Ea1 = max(0.01, Ea_param[0][0] * ΔE2 + Ea_param[0][1])
-    Ea2 = max(0.01, Ea_param[1][0] * ΔE3 + Ea_param[1][1])
-    Ea3 = max(0.01, Ea_param[2][0] * ΔE4 + Ea_param[2][1])
-    Ea4 = max(0.01, Ea_param[3][0] * ΔE5 + Ea_param[3][1])
-
-    # Extended state sequence including TS
-    state_labels = [
-        'NH3(g)', 'NH3*', 'TS1_NH3', 'NH2*+H*', 'TS2_NH2',
-        'NH*+2H*', 'TS3_NH', 'N*+3H*', 'TS4_N2',
-        'N2*+3H*', 'N2(g)+3H*', 'N2(g)+1.5H2(g)'
-    ]
-
-    # Compute state energies
-    relE = [0]
-    relE.append(relE[-1] + ΔE1)              # NH3*
-    relE.append(relE[-1] + Ea1)              # TS1
-    relE.append(relE[-2] + ΔE2)              # NH2* + H*
-    relE.append(relE[-1] + Ea2)              # TS2
-    relE.append(relE[-2] + ΔE3)              # NH* + 2H*
-    relE.append(relE[-1] + Ea3)              # TS3
-    relE.append(relE[-2] + ΔE4)              # N* + 3H*
-    relE.append(relE[-1] + Ea4)              # TS4
-    relE.append(relE[-2] + ΔE5)              # N2* + 3H*
-    relE.append(relE[-1] + ΔE6)              # N2(g) + 3H*
-    relE.append(relE[-1] + ΔE7)              # N2(g) + 1.5H2(g)
-
-    # Build platform data for plotting
-    x_vals = []
-    y_vals = []
-    for i in range(len(relE)):
-        x_vals.extend([i, i + 1])
-        y_vals.extend([relE[i]] * 2)
-    # Expand state labels to match platform points
-    labels_expanded = []
-    for label in state_labels:
-        labels_expanded.extend([label, label])
-    
-    # Save rc.csv with labels
-    df_rc = pd.DataFrame({'x': x_vals, 'y': y_vals, 'label': labels_expanded})
-    df_rc.to_csv(os.path.join(outputs_folder, 'rc.csv'), index=False)
-    # Save rc.csv
-
-    # Plot
-    plt.figure(figsize=(10, 5))
-    plt.plot(x_vals, y_vals, '-k', lw=2)
-    plt.scatter([i + 0.5 for i in range(len(relE))], relE, color='k', s=30, zorder=3)
-    plt.axhline(0, ls='--', color='gray')
-
-    # Label x-axis
-    plt.xticks([i + 0.5 for i in range(len(state_labels))], state_labels, rotation=45, ha='right')
-    plt.ylabel('Relative energy (eV)')
-    plt.title(f'EF = {ef_value:.1f} V/Å')
-    plt.tight_layout()
-    plt.savefig(os.path.join(outputs_folder, f'reaction_coordinate_EF_{ef_value}.png'), dpi=300)
-    plt.close()
-
-    # Replacement dict
-    repl = {
-        "RU(T)": E_slab,
-        "NH3(T)": E_NH3_ads,
-        "NH2(T)": E_NH2_ads,
-        "NH(T)": E_NH_ads,
-        "N(T)": E_N_ads,
-        "N2(T)": E_N2_ads,
-        "Hv1(T)": adsorption_data['H1'][2],
-        "Hv2(T)": adsorption_data['H2'][2],
-        "Hv3(T)": adsorption_data['H3'][2],
-        "H(T)": E_H_ads,
-        "N_N(T)": 2 * E_N_ads - E_slab + 0.5,
-        "TS1_NH3(T)": E_NH3_ads + Ea1,
-        "TS2_NH2(T)": E_NH2_ads + Ea2,
-        "TS3_NH(T)": E_NH_ads + Ea3,
-        "TS4_N2(T)": 2 * E_N_ads - E_slab + 0.5 + Ea4
-    }
-
-    ref_dict = {k: v - E_slab for k, v in repl.items()}
-    return ref_dict
-
-def plot_rc(EF, edft, e_slab, outputs_folder):
-    E_gas = {                 # gas
-        "H": -1.11671722,
-        "H2": -6.76668776,
-        "N": -3.12298738,
-        "N2": -16.62922486,
-        "NH": -8.10061060,
-        "NH2": -13.53307777,
-        "NH3": -19.53586573,
-    }
-
-    # ---------- 3. 取常用能量 ----------
-    E_NH3_ads  = edft['NH3'][2]          # slab+NH3
-    E_NH2_ads  = edft['NH2'][2]
-    E_NH_ads   = edft['NH'][2]
-    E_N_ads    = edft['N'][2]
-    E_H_ads    = min(edft[k][2] for k in ('H1','H2','H3'))  # 最稳定 H
-    E_N2_ads   = edft['N2'][2]
-    
-    # ---------- 4. 逐步反应热 ----------
-    steps   = []
-    labels  = []
-    
-    # 0) 初始气相
-    cumE = 0.0
-    steps.append(cumE); labels.append('NH$_3$(g)')
-    
-    # 1) NH3 吸附
-    dE1  = E_NH3_ads - e_slab - E_gas['NH3']
-    cumE += dE1
-    steps.append(cumE); labels.append('NH$_3$*')
-    
-    # 2) NH3 → NH2* + H*
-    dE2  = (E_NH2_ads + E_H_ads - e_slab) - E_NH3_ads
-    cumE += dE2
-    steps.append(cumE); labels.append('NH$_2$* + H*')
-    
-    # 3) NH2* → NH* + H*
-    dE3  = (E_NH_ads + E_H_ads - e_slab) - E_NH2_ads
-    cumE += dE3
-    steps.append(cumE); labels.append('NH* + 2H*')
-    
-    # 4) NH* → N* + H*
-    dE4  = (E_N_ads + E_H_ads - e_slab) - E_NH_ads
-    cumE += dE4
-    steps.append(cumE); labels.append('N* + 3H*')
-    
-    # 5) N* + N* → N2*
-    dE5  = (E_N2_ads + e_slab) - 2 * E_N_ads
-    cumE += dE5/2
-    steps.append(cumE); labels.append('N$_2$* + 3H*')
-    
-    # 6) N2 脱附
-    dE6  = - edft['N2'][1] * 0.5          # 按给定规则：吸附能的 -½
-    cumE += dE6
-    steps.append(cumE); labels.append('N$_2$(g) + 3H*')
-    
-    # 7) 3H* → 1.5 H2(g)
-    dE7  = - edft['H1'][1] * 1.5          # 最稳定 H 的吸附能 × -1.5
-    cumE += dE7
-    steps.append(cumE); labels.append('N$_2$(g) + 1.5H$_2$(g)')
-    
-    # ---------- 5. 画 Reaction Coordinate ----------
-    # x = range(len(steps))
-    # plt.figure(figsize=(8,5))
-    # plt.plot(x, steps, '-o', lw=2, ms=6, color='k')
-    # plt.axhline(0, ls='--', color='grey', lw=1)
-    
-    # plt.xticks(x, labels, rotation=45, ha='right')
-    # plt.ylabel('Relative energy (eV)')
-    # plt.tight_layout()
-    # plt.savefig('reaction_coordinate.png', dpi=300)
-    # plt.show()
-    
-    # --- 构造平台坐标 ---
-    x_vals = []
-    y_vals = []
-    for i in range(len(steps)):
-        x_vals.extend([i, i+1])
-        y_vals.extend([steps[i]] * 2)
-    df_rc = pd.DataFrame({'x': x_vals, 'y': y_vals})
-    df_rc.to_csv(os.path.join(outputs_folder, 'rc.csv'), index=False)
-    
-    # --- 设置平台中点 label 的位置 ---
-    label_pos = [(i + i + 1)/2 for i in range(len(steps))]
-    
-    # --- 绘图 ---
-    plt.figure(figsize=(8,5))
-    plt.plot(x_vals, y_vals, '-', lw=2, color='k', label=f'EF = {EF:.1f} V/Å')
-    plt.scatter(label_pos, steps, s=30, color='k', zorder=3)  # 小圆点标示每个状态
-    plt.axhline(0, ls='--', color='gray', lw=1)
-    
-    # x-axis
-    plt.xticks(label_pos, labels, rotation=45, ha='right')
-    plt.xlim(0, len(steps))
-    plt.ylabel('Relative energy (eV)')
-    plt.legend()
-
-    plt.tight_layout()
-    filename = os.path.join(outputs_folder, f'reaction_coordinate_EF_{EF}.png')
-    plt.savefig(filename, dpi=300)
-    plt.close()
-
-
-
-def build_refdict_and_plot_rc_double_NH3(ef_value: float, adsorption_data: dict, outputs_folder: str = "outputs") -> dict:
-    os.makedirs(outputs_folder, exist_ok=True)
-
-    # Gas-phase reference energies
-    E_gas = {
-        "NH3": -19.53586573,
-        "NH2": -13.53307777,
-        "NH": -8.10061060,
-        "N2": -16.62922486,
-        "H2": -6.76668776
-    }
-
-    # Field-dependent slab energy
-    E_slab = -6.2414 * ef_value**2 - 0.01405 * ef_value - 354.4197
-
-    # Adsorbed species energies
-    E_NH3_ads = adsorption_data['NH3'][2]
-    E_NH2_ads = adsorption_data['NH2'][2]
-    E_NH_ads = adsorption_data['NH'][2]
-    E_N_ads = adsorption_data['N'][2]
-    try:
-        E_H_ads = min(adsorption_data[k][2] for k in ('H1', 'H2', 'H3'))
-    except:
-        E_H_ads = adsorption_data['H'][2]
-    E_N2_ads = adsorption_data['N2'][2]
-
-    # Reaction energies (1 NH3 unit)
-    ΔE1 = E_NH3_ads - E_slab - E_gas['NH3']
-    ΔE2 = (E_NH2_ads + -6.76668776/2) - E_NH3_ads
-    ΔE3 = (E_NH_ads  + -6.76668776/2) - E_NH2_ads
-    ΔE4 = (E_N_ads   + -6.76668776/2) - E_NH_ads
-    # ΔE5 = (E_N2_ads + E_slab) - 2 * E_N_ads
-    ΔE5 = -(2 * E_N_ads )
-    ΔE6 = -adsorption_data['N2'][1]          # full N2 desorption
-    try:
-        ΔE7 = -adsorption_data['H1'][1] * 3      # 6H* → 3 H2(g)
-    except:
-        ΔE7 = -adsorption_data['H'][1] * 3
-
-    # Barriers
-    Ea_param_0 =    [(0.42, 0.91), (0.85, 0.75), (0.57, 0.78), (0.73, 1.31)]
-    Ea_param_N0_6 = [(0.53, 0.84), (0.89, 0.72), (0.63, 0.73), (0.48, 1.51)]
-    Ea_param_P0_6 = [(0.57, 0.92), (0.79, 0.77), (0.59, 0.78), (0.61, 1.38)]
-    
-    Ea1 = max(0.01, Ea_param[0][0] * ΔE2 + Ea_param[0][1])
-    Ea2 = max(0.01, Ea_param[1][0] * ΔE3 + Ea_param[1][1])
-    Ea3 = max(0.01, Ea_param[2][0] * ΔE4 + Ea_param[2][1])
-    Ea4 = max(0.01, Ea_param[3][0] * ΔE5 + Ea_param[3][1])
-
-    # State labels with TS included
-    state_labels = [
-        '2NH3(g)', '2NH3*', 'TS1', '2NH2*+2H*', 'TS2',
-        '2NH*+4H*', 'TS3', '2N*+6H*', 'TS4',
-        'N2*+6H*', 'N2(g)+6H*', 'N2(g)+3H2(g)'
-    ]
-
-    # Compute relE
-    relE = [0]
-    relE.append(relE[-1] + 2 * ΔE1)           # 2NH3*
-    relE.append(relE[-1] + 2 * Ea1)           # TS1
-    relE.append(relE[-2] + 2 * ΔE2)           # 2NH2*+2H*
-    relE.append(relE[-1] + 2 * Ea2)           # TS2
-    relE.append(relE[-2] + 2 * ΔE3)           # 2NH*+4H*
-    relE.append(relE[-1] + 2 * Ea3)           # TS3
-    relE.append(relE[-2] + 2 * ΔE4)           # 2N*+6H*
-    relE.append(relE[-1] + Ea4)               # TS4
-    relE.append(relE[-2] + ΔE5)               # N2*+6H*
-    relE.append(relE[-1] + ΔE6)               # N2(g)+6H*
-    relE.append(relE[-1] + ΔE7)               # N2(g)+3H2(g)
-
-    # Sanity check: match to total gas-phase reaction energy
-    ΔE_total_gas = E_gas['N2'] + 3 * E_gas['H2'] - 2 * E_gas['NH3']
-    relE[-1] = ΔE_total_gas  # enforce exact gas-phase energy consistency
-
-    # Build x/y for platform plot
-    x_vals, y_vals = [], []
-    for i, e in enumerate(relE):
-        x_vals.extend([i, i + 1])
-        y_vals.extend([e, e])
-
-    labels_expanded = []
-    for label in state_labels:
-        labels_expanded.extend([label, label])
-
-    df_rc = pd.DataFrame({'x': x_vals, 'y': y_vals, 'label': labels_expanded})
-    df_rc.to_csv(os.path.join(outputs_folder, 'rc.csv'), index=False)
-
-    # Plot
-    plt.figure(figsize=(10, 5))
-    plt.plot(x_vals, y_vals, '-k', lw=2)
-    plt.scatter([i + 0.5 for i in range(len(relE))], relE, color='k', s=30, zorder=3)
-    plt.axhline(0, ls='--', color='gray')
-    plt.xticks([i + 0.5 for i in range(len(state_labels))], state_labels, rotation=45, ha='right')
-    plt.ylabel('Relative energy (eV)')
-    plt.title(f'2 NH₃ → N₂ + 3 H₂   |   EF = {ef_value:.1f} V/Å')
-    plt.tight_layout()
-    plt.savefig(os.path.join(outputs_folder, f'reaction_coordinate_2NH3_EF_{ef_value}.png'), dpi=300)
-    plt.close()
-
-    # print("E_end:", relE[-1], "E_end_gas_ref:", ΔE_total_gas)
-    # return df_rc, relE[-1], ΔE_total_gas  # return for optional use
-
