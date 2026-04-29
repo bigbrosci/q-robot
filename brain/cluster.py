@@ -123,7 +123,6 @@ gas_dict = {
     "thiol": -55.96808919,
     'thiolate_lateral':-50.67527044,
     "thiolate_upright": -50.67527044,
-    "slab":-354.42635463
 }
 
 def calculate_triangle_center(list_coordinates):
@@ -1042,9 +1041,6 @@ def plot_active_predicting_from_csv(ratio, EF, predict_csv_dir='results'):
         eps = 1e-6
         vmin -= eps; vmax += eps
         
-        
-        
-        
     pad = 0.2
     tick_step = 0.1   # 你想要的每个 tick 间隔（最终会有 4 个间隔）
     
@@ -1392,10 +1388,7 @@ def predict_Eads_site_Taylor(cluster_path, species, site, Prop):
     constant = constant_model.predict(preidct_matrix)[0]
     
     E_species_ef = func(float(Prop), polarizability, dipole, constant)  
-    return E_species_ef
-
-
-    
+    return E_species_ef  
 
 ### GA Applilcations
     
@@ -1464,6 +1457,82 @@ def convert_sites_triangle_site(sites_list):
 
     return sites_ads
 
+def load_slab_energy_from_csv(cluster_path, ef_value):
+    """
+    Load slab energy from e_slab.csv file based on the given EF value.
+    
+    The e_slab.csv file should have the format:
+    Species,site,-0.6,-0.4,-0.2,0.0,0.2,0.4,0.6,site_type
+    slab,slab,-356.76171876,-355.45868095,...
+    
+    Args:
+        cluster_path (str or Path): Path to the slab folder containing e_slab.csv
+        ef_value (float): The EF value to look up (e.g., -0.6, 0.0, 0.6)
+    
+    Returns:
+        float: The slab energy corresponding to the given EF value
+    
+    Raises:
+        FileNotFoundError: If e_slab.csv is not found
+        ValueError: If the EF value is not found in the CSV columns
+    """
+    import pandas as pd
+    
+    csv_path = Path(cluster_path) / 'e_slab.csv'
+    
+    if not csv_path.exists():
+        raise FileNotFoundError(f"e_slab.csv not found at {csv_path}")
+    
+    # Read the CSV file
+    df = pd.read_csv(csv_path)
+    
+    # The EF values are in the column headers (except the first two: 'Species', 'site', and last: 'site_type')
+    # Find the column that corresponds to the ef_value
+    ef_columns = [col for col in df.columns if isinstance(col, (int, float)) or (isinstance(col, str) and col.lstrip('-').replace('.', '').isdigit())]
+    
+    # Convert column names to floats for comparison
+    ef_column_map = {}
+    for col in df.columns:
+        try:
+            ef_col_float = float(col)
+            ef_column_map[ef_col_float] = col
+        except (ValueError, TypeError):
+            pass
+    
+    # Find the closest EF value if exact match not found
+    if ef_value in ef_column_map:
+        ef_col = ef_column_map[ef_value]
+    else:
+        # Find closest EF value
+        available_ef = sorted(ef_column_map.keys())
+        if ef_value < min(available_ef) or ef_value > max(available_ef):
+            raise ValueError(f"EF value {ef_value} is outside the range of available values: {available_ef}")
+        
+        # Linear interpolation between two closest values
+        for i, ef in enumerate(available_ef):
+            if ef >= ef_value:
+                if i == 0:
+                    ef_col = ef_column_map[ef]
+                else:
+                    # Interpolate between available_ef[i-1] and available_ef[i]
+                    ef_lower = available_ef[i-1]
+                    ef_upper = available_ef[i]
+                    col_lower = ef_column_map[ef_lower]
+                    col_upper = ef_column_map[ef_upper]
+                    
+                    energy_lower = float(df.loc[df['Species'] == 'slab', col_lower].values[0])
+                    energy_upper = float(df.loc[df['Species'] == 'slab', col_upper].values[0])
+                    
+                    # Linear interpolation
+                    weight = (ef_value - ef_lower) / (ef_upper - ef_lower)
+                    e_slab = energy_lower + weight * (energy_upper - energy_lower)
+                    return e_slab
+                break
+    
+    # Get the slab energy for the selected column
+    e_slab = float(df.loc[df['Species'] == 'slab', ef_col].values[0])
+    return e_slab
+
 def obtain_lowest_site(data_path, species, sites, EF):
     """
     Evaluate the predicted adsorption energy for a given species at each candidate site.
@@ -1484,25 +1553,8 @@ def obtain_lowest_site(data_path, species, sites, EF):
     # Ensure EF is a float
     ef_value = float(EF)
 
-    dict_slab = {
-        -0.7: -357.44210671,
-        -0.6: -356.63257649,
-        -0.5: -355.95232361,
-        -0.4: -355.39898709,
-        -0.3: -354.97087941,
-        -0.2: -354.66670785,
-        -0.1: -354.48543185,
-        0.0: -354.42631516,
-        0.1: -354.4891281,
-        0.2: -354.67388335,
-        0.3: -354.98111891,
-        0.4: -355.41184988,
-        0.5: -355.96776985,
-        0.6: -356.65161492,
-        0.7: -357.46803062
-        }
-    
-    E_slab = dict_slab[ef_value]
+    # Load slab energy from e_slab.csv
+    E_slab = load_slab_energy_from_csv(cluster_path, ef_value)
         
     energy_dict = {}
     sites_ads = convert_sites_triangle_site(sites)
@@ -1601,6 +1653,34 @@ def compute_EDFT(data_path, site, EF):
     ef_value = float(EF)
     # E_slab  = -6.2414 * EF**2 - 0.01405 * EF - 354.4197 
 
+    # Load slab energy from e_slab.csv file
+    E_slab = load_slab_energy_from_csv(data_path / 'slab', ef_value)
+
+    edft = {}
+
+    for species in ["NH3", "NH2", "NH", "N", "H", "N2"]:
+        dict_species = obtain_lowest_site(data_path, species, site, EF)
+        edft.update(dict_species)
+
+    return edft, E_slab
+
+
+### MKM 
+
+def generate_replacement_dict(ef_value, adsorption_data: dict, data_path=None) -> dict:
+    """
+    根据吸附态字典和 Ru 的能量，生成 replacement_dict，用于替换 Excel Sheet1 中的数据。
+
+    参数：
+    - adsorption_data: 吸附物字典，格式为 {ads: (site, adsorption_energy, total_energy)}
+    - ef_value: EF值
+    - data_path: 数据路径，用于读取 e_slab.csv（可选，如果提供则使用CSV，否则使用默认字典）
+
+    返回：
+    - replacement_dict: key 为 Excel 中的 A 列项（如 "NH3(T)"），value 为替换后的能量值（float）
+    """
+
+    # E_slab energy dictionary for different EF values
     dict_slab = {
         -0.7: -357.44210671,
         -0.6: -356.63257649,
@@ -1617,34 +1697,18 @@ def compute_EDFT(data_path, site, EF):
         0.5: -355.96776985,
         0.6: -356.65161492,
         0.7: -357.46803062
-        }
-    
-    E_slab = dict_slab[ef_value]
+    }
 
-    edft = {}
-
-    for species in ["NH3", "NH2", "NH", "N", "H", "N2"]:
-        dict_species = obtain_lowest_site(data_path, species, site, EF)
-        edft.update(dict_species)
-
-    return edft, E_slab
-
-
-### MKM 
-
-def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
-    """
-    根据吸附态字典和 Ru 的能量，生成 replacement_dict，用于替换 Excel Sheet1 中的数据。
-
-    参数：
-    - adsorption_data: 吸附物字典，格式为 {ads: (site, adsorption_energy, total_energy)}
-
-    返回：
-    - replacement_dict: key 为 Excel 中的 A 列项（如 "NH3(T)"），value 为替换后的能量值（float）
-    """
-
-    # E_slab  = -6.2414 * ef_value**2 - 0.01405 * ef_value - 354.4197 
-
+    # Load E_slab from CSV if data_path is provided, otherwise use hardcoded dict
+    if data_path is not None:
+        try:
+            E_slab = load_slab_energy_from_csv(Path(data_path) / 'slab', ef_value)
+        except:
+            # Fall back to hardcoded dict if CSV loading fails
+            E_slab = dict_slab.get(ef_value, dict_slab[0.0])
+    else:
+        E_slab = dict_slab.get(ef_value, dict_slab[0.0])
+  
     dict_H = {
         -0.7: -361.62253006,
         -0.6: -360.8042509,
@@ -1663,29 +1727,6 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
         0.7: -361.66972994
         }
     
-    dict_slab = {
-        -0.7: -357.44210671,
-        -0.6: -356.63257649,
-        -0.5: -355.95232361,
-        -0.4: -355.39898709,
-        -0.3: -354.97087941,
-        -0.2: -354.66670785,
-        -0.1: -354.48543185,
-        0.0: -354.42631516,
-        0.1: -354.4891281,
-        0.2: -354.67388335,
-        0.3: -354.98111891,
-        0.4: -355.41184988,
-        0.5: -355.96776985,
-        0.6: -356.65161492,
-        0.7: -357.46803062
-        }
-    
-
-    # Initialize replacement_dict
-    E_slab = dict_slab[ef_value]
-    # E_H = dict_H[ef_value]
-    
     replacement_dict = {"RU(T)": E_slab}
     # replacement_dict['H(T)'] = E_H
 
@@ -1697,7 +1738,6 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     
     replacement_dict['N_N(T)'] = E_N_N
     
-
     # Calculate energies for transition states and intermediates
 
     E_NH3 = adsorption_data['NH3'][2]
@@ -1706,7 +1746,6 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     E_N  = adsorption_data['N'][2]
     E_N2 = adsorption_data['N2'][2]
     E_H = adsorption_data['H'][2]
-
 
     # if float(adsorption_data['NH3'][1]) <= -1.9:
     #     print('E_NH3', adsorption_data['NH3'])
@@ -1724,7 +1763,6 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     # E3  = E_N + E_H - E_NH - E_slab
     # E4 = E_N2 - E_N_N    
     
-
     # v3
     E1 = E_NH2 + (-6.76668776)/2 - E_NH3 
     E2 = E_NH  + (-6.76668776)/2 - E_NH2  
@@ -1736,12 +1774,7 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     # E2 = E_NH  + (-6.76668776)/2 - E_NH2  
     # E3 = E_N   + (-6.76668776)/2 - E_NH  
     # E4 = E_N2 - E_N_N   
-    
-    
-    
-    # print('E_speices', )
-    # print('E1-4', E1, E2, E3, E4)
-    
+        
     # BEP scaling Ea = a * ΔE + b
     Ea_params = [
         (0.52, 0.90),  # TS1_NH3(T)
@@ -1757,7 +1790,6 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
 
     Ea_list = [Ea1, Ea2, Ea3, Ea4]
     Ea1, Ea2, Ea3, Ea4 = [max(0.01, ea) for ea in Ea_list]
-    
     
     dict_energy = {
         "E_H":   adsorption_data["H"][1],
@@ -1781,7 +1813,6 @@ def generate_replacement_dict(ef_value, adsorption_data: dict) -> dict:
     ref_dict = {k: v - E_slab for k, v in replacement_dict.items()}
 
     return ref_dict, dict_energy
-
 
 def update_excel_with_replacement(index_list, replacement_dict, ef_value,
                                   template_file="NH3_temp.xlsx", base_dir="mkm_inputs", verbose=True):
@@ -1816,22 +1847,27 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
     dft_sheet = wb["species"]
     
     # 3. Replace data in the sheet: get keys from column A, replace potential energy in column L"
-    # print(f"✅ Fill the Excel Template File")
+    if verbose:
+        print(f"✅ Fill the Excel Template File")
     
     missing_keys = []
+    replaced_count = 0
     for row in dft_sheet.iter_rows(min_row=2, min_col=1, max_col=12):
         key_cell = row[0]    # Column A (key)
         target_cell = row[11]  # Column L (the value to replace)
         key = key_cell.value
         if key in replacement_dict:
             target_cell.value = replacement_dict[key]
-            # if verbose:
-                # print(f"✅ Replace: {key} -> {replacement_dict[key]:.6f}")
+            if verbose:
+                print(f"   ✅ Replace: {key} -> {replacement_dict[key]:.6f}")
+            replaced_count += 1
         else:
             missing_keys.append(key)
             
-    # for key in missing_keys:
-        # print(f"  - {key}")
+    if verbose:
+        print(f"   Total replaced: {replaced_count}")
+        if missing_keys:
+            print(f"   Missing keys: {missing_keys}")
     
     # 4. Save the updated Excel file into the inputs folder
     output_path = os.path.join(inputs_folder, 'NH3_Input_Data.xlsx')
@@ -1839,7 +1875,7 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
     # print(f"📁 File saved to: {output_path}")
     
     # 5. Copy files to the outputs folder (from base_dir)
-    for filename in ["NH3_MKM_Ru45.py"]:
+    for filename in ["drc_qli.py"]:
         src = os.path.join(base_dir, filename)
         dst = os.path.join(outputs_folder, filename)
         if os.path.exists(src):
@@ -1855,33 +1891,60 @@ def update_excel_with_replacement(index_list, replacement_dict, ef_value,
     dst_IO = os.path.join(dst_IO_dir, "OpenMKM_IO.py")
     if os.path.exists(src_IO):
         shutil.copy2(src_IO, dst_IO)
-    #     if verbose:
-    #         print(f"✅ Copied OpenMKM_IO.py to {dst_IO_dir}")
-    # else:
-    #     print("⚠️ File OpenMKM_IO.py not found!")
     
-    # 6. Workflow:
+    # 6. generate YAML file by executing OpenMKM_IO.py
     main_folder = os.path.join(base_dir, index_folder, ef_folder)    
-    
-    # 6.1 Change to main_folder and execute "python3 OpenMKM_IO.py"
-    # print("✅ Generating the MKM inputs...")
-    # subprocess.run(["python3", "OpenMKM_IO.py"], cwd=main_folder, check=True)
     prepare_yaml(main_folder)
-    
-    # # 6.2 Instead of running "bash modify.sh", update the YAML file.
-    # yaml_file = os.path.join(main_folder, "outputs", "thermo.yaml")
-    # print("✅ Updating YAML file in outputs folder...")
-    # update_yaml(yaml_file)
-    
-    # 6.3 In outputs folder, run "python3 NH3_v2.py 600 > mkm.out"
-    # print("✅ Running MKM...")
-    #T = 400   # Celcius
-    #run_mkm(main_folder, T)
-    # subprocess.run("python3 NH3_v2.py 600 > mkm.out", cwd=outputs_folder, shell=True, check=True)
-    
-    # print("✅ Workflow completed!\n")
 
-#############
+def prepare_yaml(main_folder):
+    """
+    Execute OpenMKM_IO.py to generate YAML thermodynamic data file.
+    
+    Parameters:
+        main_folder: Path to the folder containing OpenMKM_IO.py and inputs folder
+    
+    Output:
+        Generates thermo.yaml in the outputs folder
+    """
+    print("✅ Generating YAML file from Excel data...")
+    
+    yaml_path = os.path.join(main_folder, "outputs", "thermo.yaml")
+    outputs_folder = os.path.join(main_folder, "outputs")
+    
+    # Create outputs folder if it doesn't exist
+    os.makedirs(outputs_folder, exist_ok=True)
+    
+    # Run OpenMKM_IO.py to generate YAML from Excel input
+    try:
+        result = subprocess.run(
+            ["python3", "OpenMKM_IO.py"], 
+            cwd=main_folder, 
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        if result.returncode == 0:
+            if os.path.exists(yaml_path):
+                print(f"   ✅ YAML file successfully created: {yaml_path}")
+                return yaml_path
+            else:
+                print(f"   ⚠️ Warning: OpenMKM_IO.py ran but YAML file not found")
+                if result.stdout:
+                    print(f"   Output: {result.stdout[:200]}")
+                return None
+        else:
+            print(f"   ❌ Error running OpenMKM_IO.py (exit code: {result.returncode})")
+            if result.stderr:
+                print(f"   Error details: {result.stderr[:300]}")
+            return None
+            
+    except subprocess.TimeoutExpired:
+        print(f"   ❌ OpenMKM_IO.py timed out after 60 seconds")
+        return None
+    except Exception as e:
+        print(f"   ❌ Unexpected error: {str(e)}")
+        return None
 
 ################## Section MKM
 
