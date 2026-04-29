@@ -1,0 +1,325 @@
+
+# ------------------ Site Conversion ------------------
+def convert_sites(sites_list):
+    """
+    Given a list of four site numbers corresponding to atoms A, B, C, and D (in clockwise order),
+    return a dictionary mapping standard site labels to their numeric string representations.
+    
+    For example, if sites_list = [20, 23, 24, 42]:
+      - "top_A": "20"
+      - "top_B": "23"
+      - "top_C": "24"
+      - "top_D": "42"
+      - "bridge_A-B": "20-23"
+      - "bridge_B-C": "23-24"
+      - "bridge_C-D": "24-42"
+      - "bridge_D-A": "20-42"  (always smaller-first)
+      - "hollow_ABD": "20-23-42"  (sorted ascending among A, B, D)
+      - "hollow_BCD": "23-24-42"  (sorted ascending among B, C, D)
+    """
+    if len(sites_list) != 4:
+        raise ValueError("sites_list must contain exactly four elements corresponding to A, B, C, and D.")
+    sites_list = [i + 1 for i in sites_list]
+    A, B, C, D = sites_list
+    site_dict = {}
+    site_dict["top_A"] = str(A)
+    site_dict["top_B"] = str(B)
+    site_dict["top_C"] = str(C)
+    site_dict["top_D"] = str(D)
+    site_dict["bridge_A-B"] = f"{min(A, B)}_{max(A, B)}"
+    site_dict["bridge_B-C"] = f"{min(B, C)}_{max(B, C)}"
+    site_dict["bridge_C-D"] = f"{min(C, D)}_{max(C, D)}"
+    site_dict["bridge_D-A"] = f"{min(D, A)}_{max(D, A)}"
+    site_dict["hollow_ABD"] = "_".join(str(x) for x in sorted([A, B, D]))
+    site_dict["hollow_BCD"] = "_".join(str(x) for x in sorted([B, C, D]))
+    # print(site_dict)
+    return site_dict
+
+def convert_sites_triangle_site(sites_list):
+    """
+    Given a list of three site numbers corresponding to atoms A, B, C(in clockwise order),
+    return a dictionary mapping standard site labels to their numeric string representations.
+    
+    For example, if sites_list = [20, 23, 24]:
+      - "top_A": "20"
+      - "top_B": "23"
+      - "top_C": "24"
+      - "bridge_A-B": "20-23"
+      - "bridge_B-C": "23-24"
+      - "bridge_A-C": "20-24"
+      - "hollow_ABC": "20-23-24"  (sorted ascending among B, C, D)
+    """
+    if len(sites_list) != 3:
+        raise ValueError("sites_list must contain exactly three elements corresponding to A, B, C.")
+    sites_list = [i + 1 for i in sites_list]
+    # print(sites_list)
+    A, B, C = sites_list
+    site_dict = {}
+    site_dict["top_A"] = str(A)
+    site_dict["top_B"] = str(B)
+    site_dict["top_C"] = str(C)
+    site_dict["bridge_A-B"] = f"{min(A, B)}_{max(A, B)}"
+    site_dict["bridge_B-C"] = f"{min(B, C)}_{max(B, C)}"
+    site_dict["bridge_A-C"] = f"{min(A, C)}_{max(A, C)}"
+    site_dict["hollow_ABC"] = "_".join(str(x) for x in sorted([A, B, C]))
+    return site_dict
+
+# ------------------ Modified Helper Function ------------------
+def select_best_site(cluster_path, species, sites, Prop, site_mapping):
+    """
+    Evaluate the predicted adsorption energy for a given species at each candidate site.
+    If site_mapping is provided, convert the candidate label to its numeric string.
+    
+    Args:
+        cluster_path (str): Path to the cluster data.
+        species (str): The adsorbate species (e.g., "NH3", "NH2", "NH", "N", "H", "N2").
+        sites (list): List of candidate site labels (e.g., "top_A", "bridge_A-B", etc.).
+        Prop: Additional properties required by predict_Eads_site. It can be either the EF values or polarizability 
+        site_mapping (dict, optional): Mapping of candidate labels to numeric strings.
+    
+    Returns:
+        tuple: (best_site, energy_dict) where energy_dict is keyed by the candidate (symbolic label).
+    """
+    energy_dict = {}
+    
+    for site in sites:
+        candidate = site_mapping[site] if (site_mapping is not None and site in site_mapping) else site
+        data_path = Path("/mnt/c/Users/lqlhz/OneDrive - UMass Lowell/Projects/P1_cluster/data_sim")
+        filename = f"{species}_ads/results/all_preds_iter5_{Prop}.csv"
+        filepath = os.path.join(data_path, filename)
+        df = pd.read_csv(filepath)
+        result_dict = df.set_index("site")[["Y_true_all", "Y_pred_all"]].T.to_dict("list")
+        result_dict = {str(k): v for k, v in result_dict.items()}
+        
+        if candidate in result_dict.keys():
+            Eads = float(result_dict[candidate][0])
+        else:
+            Eads = predict_Eads_site(cluster_path, species, candidate, Prop)
+        energy_dict[site] = Eads
+        # print(f"{species} at site {site} ({candidate}): Eads = {Eads:.3f} eV")
+    
+    # --- Filter overly strong adsorption for selected species (editable thresholds) ---
+    FILTER_THRESH = {
+        "NH3": -1.9,
+        "NH2": -3.9,
+        "NH":  -5.3,
+        "N":   -1.1,
+        "H":   -1.0,
+        "N2":  -1.0
+    }
+    
+    sp = species.upper()
+    print(sp)
+    if sp in FILTER_THRESH:
+        thr = FILTER_THRESH[sp]
+        filtered = {k: v for k, v in energy_dict.items() if v >= thr}
+        if filtered:
+            best_site = min(filtered, key=filtered.get)
+        else:
+            # fallback: if everything is filtered out, keep original behavior
+            best_site = min(energy_dict, key=energy_dict.get)
+    else:
+        best_site = min(energy_dict, key=energy_dict.get)
+        
+    # print(f"Best {species} site: {best_site} with Eads = {energy_dict[best_site]:.3f} eV\n")
+    return best_site, energy_dict
+
+# ------------------ Candidate Mappings ------------------
+
+# (1) For NH3 adsorption:
+nh3_candidates = ["top_A", "top_B", "top_C", "top_D"]
+
+# (2) For NH3 → NH2 + H:
+def get_nh2_candidates(nh3_site):
+    mapping = {
+        "top_A": ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
+        "top_B": ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+        "top_C": ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
+        "top_D": ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"]
+    }
+    return mapping.get(nh3_site, [])
+
+# For H in Step 2 (H determined by NH2):
+nh2_to_h_candidates_step2 = {
+    "top_A":     ["top_B", "top_D", "hollow_ABD", "hollow_BCD"],
+    "top_B":     ["top_A", "top_C", "hollow_ABD", "hollow_BCD"],
+    "top_C":     ["top_B", "top_D", "hollow_ABD", "hollow_BCD"],
+    "top_D":     ["top_A", "top_C", "hollow_ABD", "hollow_BCD"],
+    "bridge_A-B": ["top_A", "top_B", "bridge_A-B", "hollow_ABD"],
+    "bridge_B-C": ["top_B", "top_C", "bridge_B-C", "hollow_BCD"],
+    "bridge_C-D": ["top_C", "top_D", "bridge_C-D", "hollow_BCD"],
+    "bridge_D-A": ["top_D", "top_A", "bridge_D-A", "hollow_ABD"],
+    "hollow_ABD": ["hollow_ABD", "top_A", "top_B", "top_D", "bridge_A-B", "bridge_D-A"],
+    "hollow_BCD": ["hollow_BCD", "top_B", "top_C", "top_D", "bridge_B-C", "bridge_C-D"]
+}
+
+# (3) For NH2 → NH + H:
+nh2_to_nh_candidates = {
+    "top_A":     ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
+    "top_B":     ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+    "top_C":     ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
+    "top_D":     ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"],
+    "bridge_A-B": ["top_A", "top_B", "bridge_A-B", "hollow_ABD"],
+    "bridge_B-C": ["top_B", "top_C", "bridge_B-C", "bridge_A-B", "hollow_BCD"],
+    "bridge_C-D": ["top_C", "top_D", "bridge_C-D", "hollow_BCD"],
+    "bridge_D-A": ["top_D", "top_A", "bridge_D-A", "hollow_ABD"],
+    "hollow_ABD": ["hollow_ABD", "top_A", "top_B", "top_D", "bridge_A-B", "bridge_D-A"],
+    "hollow_BCD": ["hollow_BCD", "top_B", "top_C", "top_D", "bridge_B-C", "bridge_C-D"]
+}
+
+# For H in Step 3 (H determined by NH):
+nh_to_h_candidates = {
+    "top_A":     ["top_B", "top_D", "top_C", "hollow_ABD", "hollow_BCD"],
+    "top_B":     ["top_A", "top_C", "top_D", "bridge_A-B", "bridge_B-C", "bridge_D-A", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
+    "top_C":     ["top_B", "top_D", "top_A", "bridge_B-C", "bridge_C-D", "bridge_A-B", "bridge_D-A", "hollow_BCD", "hollow_ABD"],
+    "top_D":     ["top_A", "top_B", "top_C", "bridge_C-D", "bridge_D-A", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+    "bridge_A-B": ["top_C", "top_D", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+    "bridge_B-C": ["top_A", "top_D", "bridge_D-A", "bridge_A-B", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
+    "bridge_C-D": ["top_A", "top_B", "bridge_A-B", "bridge_B-C", "bridge_D-A", "hollow_ABD", "hollow_BCD"],
+    "bridge_D-A": ["top_B", "top_C", "bridge_B-C", "bridge_A-B", "bridge_C-D", "hollow_ABD", "hollow_BCD"],
+    "hollow_ABD": ["hollow_BCD", "top_A", "top_B", "top_C", "top_D"],
+    "hollow_BCD": ["hollow_ABD", "top_A", "top_B", "top_C", "top_D"]
+}
+
+# (4) For NH → N + H:
+nh_to_n_candidates = {
+    "top_A":     ["top_A", "bridge_A-B", "bridge_D-A", "hollow_ABD"],
+    "top_B":     ["top_B", "bridge_A-B", "bridge_B-C", "hollow_ABD", "hollow_BCD"],
+    "top_C":     ["top_C", "bridge_B-C", "bridge_C-D", "hollow_BCD"],
+    "top_D":     ["top_D", "bridge_C-D", "bridge_D-A", "hollow_ABD", "hollow_BCD"],
+    "bridge_A-B": ["top_A", "top_B", "bridge_A-B", "hollow_ABD"],
+    "bridge_B-C": ["top_B", "top_C", "bridge_B-C", "bridge_A-B", "hollow_BCD"],
+    "bridge_C-D": ["top_C", "top_D", "bridge_C-D", "hollow_BCD"],
+    "bridge_D-A": ["top_D", "top_A", "bridge_D-A", "hollow_ABD"],
+    "hollow_ABD": ["hollow_ABD", "top_A", "top_B", "top_D", "bridge_A-B", "bridge_D-A"],
+    "hollow_BCD": ["hollow_BCD", "top_B", "top_C", "top_D", "bridge_B-C", "bridge_C-D"]
+}
+# For H in Step 4, reuse nh_to_h_candidates.
+
+# ------------------ Reaction Chain Functions ------------------
+
+# Step 1: NH₃ Adsorption
+def determine_NH3_configuration(cluster_path, Prop, site_mapping=None):
+    best_NH3_site, energies = select_best_site(cluster_path, "NH3", nh3_candidates, Prop, site_mapping)
+    return {"site": best_NH3_site, "energy": energies[best_NH3_site]}
+
+# Step 2: NH₃ → NH₂ + H (H determined by NH2)
+def determine_NH2_configuration(cluster_path, Prop, best_NH3_site, site_mapping=None):
+    nh2_candidates = get_nh2_candidates(best_NH3_site)
+    best_NH2_site, energies_NH2 = select_best_site(cluster_path, "NH2", nh2_candidates, Prop, site_mapping)
+    candidate_H_sites = nh2_to_h_candidates_step2.get(best_NH2_site, [])
+    if candidate_H_sites:
+        best_H_site, energies_H = select_best_site(cluster_path, "H", candidate_H_sites, Prop, site_mapping)
+    else:
+        best_H_site, energies_H = None, {}
+    return {
+        "NH2": {"site": best_NH2_site, "energy": energies_NH2[best_NH2_site]},
+        "H1": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}
+    }
+
+# Step 3: NH₂ → NH + H (H determined by NH)
+def determine_NH_configuration(cluster_path, Prop, best_NH2_site, site_mapping=None):
+    candidate_NH_sites = nh2_to_nh_candidates.get(best_NH2_site, [])
+    best_NH_site, energies_NH = select_best_site(cluster_path, "NH", candidate_NH_sites, Prop, site_mapping)
+    candidate_H_sites = nh_to_h_candidates.get(best_NH_site, [])
+    if candidate_H_sites:
+        best_H_site, energies_H = select_best_site(cluster_path, "H", candidate_H_sites, Prop, site_mapping)
+    else:
+        best_H_site, energies_H = None, {}
+    return {
+        "NH": {"site": best_NH_site, "energy": energies_NH[best_NH_site]},
+        "H2": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}
+    }
+
+# Step 4: NH → N + H (H determined by N)
+def determine_N_configuration(cluster_path, Prop, best_NH_site, site_mapping=None):
+    candidate_N_sites = nh_to_n_candidates.get(best_NH_site, [])
+    if candidate_N_sites:
+        best_N_site, energies_N = select_best_site(cluster_path, "N", candidate_N_sites, Prop, site_mapping)
+    else:
+        best_N_site, energies_N = None, {}
+    candidate_H_sites = nh_to_h_candidates.get(best_N_site, [])
+    if candidate_H_sites:
+        best_H_site, energies_H = select_best_site(cluster_path, "H", candidate_H_sites, Prop, site_mapping)
+    else:
+        best_H_site, energies_H = None, {}
+    return {
+        "N": {"site": best_N_site, "energy": energies_N.get(best_N_site, None)},
+        "H3": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}
+    }
+
+# Step 5: N₂ Adsorption
+def determine_N2_configuration(cluster_path, Prop, site_mapping=None):
+    candidate_sites = [
+        "top_A", "top_B", "top_C", "top_D",
+        "bridge_A-B", "bridge_B-C", "bridge_C-D", "bridge_D-A",
+        "hollow_ABD", "hollow_BCD"
+    ]
+    best_N2_site, energies_N2 = select_best_site(cluster_path, "N2", candidate_sites, Prop, site_mapping)
+    return {"site": best_N2_site, "energy": energies_N2[best_N2_site]}
+
+
+### For triangle sites 
+# Step 1: NH₃ Adsorption
+nh3_candidates_tri = ["top_A", "top_B", "top_C"]
+nh2_candidates_tri = ["top_A", "top_B", "top_C", "bridge_A-B", "bridge_B-C", "bridge_A-C"]
+nh_candidates_tri = ["top_A", "top_B", "top_C", "bridge_A-B", "bridge_B-C", "bridge_A-C", "hollow_ABC" ]
+n_candidates_tri =  nh_candidates_tri 
+h_candidates_tri =  nh_candidates_tri 
+n2_candidates_tri = nh_candidates_tri 
+
+def determine_NH3_configuration_tri(cluster_path, Prop, site_mapping):
+    best_NH3_site, energies = select_best_site(cluster_path, "NH3", nh3_candidates_tri, Prop, site_mapping)
+    return {"site": best_NH3_site, "energy": energies[best_NH3_site]}
+def determine_NH2_configuration_tri(cluster_path, Prop, site_mapping):
+    best_NH2_site, energies_NH2 = select_best_site(cluster_path, "NH2", nh2_candidates_tri, Prop, site_mapping)
+    return {"NH2": {"site": best_NH2_site, "energy": energies_NH2[best_NH2_site]}}
+def determine_H_configuration_tri(cluster_path, Prop, site_mapping):    
+    best_H_site, energies_H = select_best_site(cluster_path, "H", h_candidates_tri, Prop, site_mapping)
+    return {"H": {"site": best_H_site, "energy": energies_H.get(best_H_site, None)}}
+def determine_NH_configuration_tri(cluster_path, Prop, site_mapping):
+    best_NH_site, energies_NH = select_best_site(cluster_path, "NH", nh_candidates_tri, Prop, site_mapping)
+    return {"NH": {"site": best_NH_site, "energy": energies_NH[best_NH_site]}}
+def determine_N_configuration_tri(cluster_path, Prop, site_mapping):
+    best_N_site, energies_N = select_best_site(cluster_path, "N", n_candidates_tri, Prop, site_mapping)
+    return {"N": {"site": best_N_site, "energy": energies_N.get(best_N_site, None)}}
+def determine_N2_configuration_tri(cluster_path, Prop, site_mapping):
+    best_N2_site, energies_N2 = select_best_site(cluster_path, "N2", n2_candidates_tri, Prop, site_mapping)
+    return {"site": best_N2_site, "energy": energies_N2[best_N2_site]}
+
+
+
+
+def determine_full_configuration_triangle_site(cluster_path, Prop, sites_list=None):
+    """
+    Determine the full stable configuration for the reaction chain and return a dictionary
+    where each species is mapped to a tuple (site, energy):
+      1. NH3 → NH2 + H      (H determined by NH2)
+      2. NH2 → NH + H       (H determined by NH)
+      3. NH  → N + H        (H determined by N)
+      4. Also determine the N2 adsorption site.
+    
+    If sites_list is provided (a list of four numbers for atoms A, B, C, D in clockwise order),
+    it is converted to a mapping for energy predictions.
+    
+    Returns a dictionary with keys:
+      "NH3", "NH2", "NH", "N", "N2", "H1", "H2", and "H3".
+    """
+    site_mapping = convert_sites_triangle_site(sites_list) 
+    config_NH3 = determine_NH3_configuration_tri(cluster_path, Prop, site_mapping)
+    config_NH2 = determine_NH2_configuration_tri(cluster_path, Prop, site_mapping)
+    config_NH = determine_NH_configuration_tri(cluster_path, Prop, site_mapping)
+    config_N = determine_N_configuration_tri(cluster_path, Prop,  site_mapping)
+    config_H = determine_H_configuration_tri(cluster_path, Prop,  site_mapping)
+    config_N2 = determine_N2_configuration_tri(cluster_path, Prop, site_mapping)
+
+    final_config = {
+        "NH3": (config_NH3["site"], config_NH3["energy"]),
+        "NH2": (config_NH2["NH2"]["site"], config_NH2["NH2"]["energy"]),
+        "NH":  (config_NH["NH"]["site"], config_NH["NH"]["energy"]),
+        "N":   (config_N["N"]["site"], config_N["N"]["energy"]),
+        "N2":  (config_N2["site"], config_N2["energy"]),
+        "H":   (config_H["H"]["site"], config_H["H"]["energy"]),
+    }
+    
+    return final_config

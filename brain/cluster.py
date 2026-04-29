@@ -18,6 +18,7 @@ from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.base import BaseEstimator, RegressorMixin
 from ase import Atoms
 from ase.io import read, write
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
@@ -844,7 +845,7 @@ def test_one_model_split(df, EF,  X, Y, models, model_name, ratio):
     return mae, rmse, r2 
         
  
-class PseudoInverseLinearRegression:
+class PseudoInverseLinearRegression(BaseEstimator, RegressorMixin):
     def __init__(self, fit_intercept=True):
         self.beta_ = None
         self.fit_intercept = fit_intercept
@@ -856,6 +857,7 @@ class PseudoInverseLinearRegression:
         
         # Compute the beta coefficients using the Moore-Penrose pseudoinverse
         self.beta_ = np.linalg.pinv(X).dot(Y)
+        return self
 
     def predict(self, X):
         if self.fit_intercept:
