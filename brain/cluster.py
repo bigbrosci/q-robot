@@ -1788,7 +1788,9 @@ def generate_replacement_dict(ef_value, adsorption_data: dict, data_path=None) -
 
     ref_dict = {k: v - E_slab for k, v in replacement_dict.items()}
 
-    return ref_dict, dict_energy
+    # Merge both dictionaries into one and add EF value
+    merged_dict = {**ref_dict, **dict_energy}
+    return merged_dict
 
 def update_excel_with_replacement(index_list, replacement_dict, ef_value,
                                   template_file="NH3_temp.xlsx", base_dir="mkm_inputs", verbose=True):
