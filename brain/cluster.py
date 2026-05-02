@@ -1683,34 +1683,8 @@ def generate_replacement_dict(ef_value, adsorption_data: dict, data_path=None) -
     """
 
     # E_slab energy dictionary for different EF values
-    dict_slab = {
-        -0.7: -357.44210671,
-        -0.6: -356.63257649,
-        -0.5: -355.95232361,
-        -0.4: -355.39898709,
-        -0.3: -354.97087941,
-        -0.2: -354.66670785,
-        -0.1: -354.48543185,
-        0.0: -354.42631516,
-        0.1: -354.4891281,
-        0.2: -354.67388335,
-        0.3: -354.98111891,
-        0.4: -355.41184988,
-        0.5: -355.96776985,
-        0.6: -356.65161492,
-        0.7: -357.46803062
-    }
+    E_slab = load_slab_energy_from_csv(Path(data_path) / 'slab', ef_value)
 
-    # Load E_slab from CSV if data_path is provided, otherwise use hardcoded dict
-    if data_path is not None:
-        try:
-            E_slab = load_slab_energy_from_csv(Path(data_path) / 'slab', ef_value)
-        except:
-            # Fall back to hardcoded dict if CSV loading fails
-            E_slab = dict_slab.get(ef_value, dict_slab[0.0])
-    else:
-        E_slab = dict_slab.get(ef_value, dict_slab[0.0])
-  
     dict_H = {
         -0.7: -361.62253006,
         -0.6: -360.8042509,
