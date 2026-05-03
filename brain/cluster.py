@@ -1609,7 +1609,7 @@ def obtain_lowest_site(data_path, species, sites, EF):
     best_site = min(energy_dict, key=energy_dict.get)
     E_ads_best = energy_dict[best_site]
     
-    # 
+    # V1
     EADS_FLOOR = {
         'H':   -1.0,
         'NH3': -1.8,
@@ -1710,7 +1710,7 @@ def generate_replacement_dict(ef_value, adsorption_data: dict, data_path=None) -
     for species in ['NH3', 'NH2', 'NH', 'N', 'N2', 'H']:
         if species in adsorption_data:
             replacement_dict[f"{species}(T)"] = adsorption_data[species][2]
-    E_N_N = 2 * adsorption_data['N'][1] + gas_dict['N2'] +  E_slab  + 0.5 
+    E_N_N = 2 * adsorption_data['N'][1] + gas_dict['N2'] +  E_slab 
     
     replacement_dict['N_N(T)'] = E_N_N
     
@@ -1723,38 +1723,22 @@ def generate_replacement_dict(ef_value, adsorption_data: dict, data_path=None) -
     E_N2 = adsorption_data['N2'][2]
     E_H = adsorption_data['H'][2]
 
-    # if float(adsorption_data['NH3'][1]) <= -1.9:
-    #     print('E_NH3', adsorption_data['NH3'])
 
-
-    #V1
-    # E1  = E_NH2 + E_H - E_NH3 - E_slab
-    # E2  = E_NH + E_H - E_NH2 - E_slab
-    # E3  = E_N + E_H - E_NH - E_slab
-    # E4 = E_slab + gas_dict['N2'] - E_N_N     
-    
-    #V2
-    # E1  = E_NH2 + E_H - E_NH3 - E_slab
-    # E2  = E_NH + E_H - E_NH2 - E_slab
-    # E3  = E_N + E_H - E_NH - E_slab
-    # E4 = E_N2 - E_N_N    
-    
-    # v3
     E1 = E_NH2 + (-6.76668776)/2 - E_NH3 
     E2 = E_NH  + (-6.76668776)/2 - E_NH2  
     E3 = E_N   + (-6.76668776)/2 - E_NH  
-    E4 = E_slab + gas_dict['N2'] - E_N_N     
- 
-    # #v4
-    # E1 = E_NH2 + (-6.76668776)/2 - E_NH3 
-    # E2 = E_NH  + (-6.76668776)/2 - E_NH2  
-    # E3 = E_N   + (-6.76668776)/2 - E_NH  
-    # E4 = E_N2 - E_N_N   
-        
+
+    # V1
+    # E4 = E_slab + gas_dict['N2'] - E_N_N - 1.0
+    
+    # V2
+    E4 = E_slab + gas_dict['N2'] - (E_N_N + 0.5)
+
+
     # BEP scaling Ea = a * ΔE + b
     Ea_params = [
-        (0.52, 0.90),  # TS1_NH3(T)
-        (0.86, 0.73),  # TS2_NH2(T)
+        (0.52, 0.89),  # TS1_NH3(T)
+        (0.85, 0.74),  # TS2_NH2(T)
         (0.62, 0.75),  # TS3_NH(T)
         (0.62, 1.39)   # TS4_N2(T)
     ]
@@ -1770,6 +1754,7 @@ def generate_replacement_dict(ef_value, adsorption_data: dict, data_path=None) -
     dict_energy = {
         "E_H":   adsorption_data["H"][1],
         "E_N":   adsorption_data["N"][1],
+        "E_N2":   adsorption_data["N2"][1],
         "E_NH":  adsorption_data["NH"][1],
         "E_NH2": adsorption_data["NH2"][1],
         "E_NH3": adsorption_data["NH3"][1],
