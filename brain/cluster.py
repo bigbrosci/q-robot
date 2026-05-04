@@ -1710,7 +1710,7 @@ def generate_replacement_dict(ef_value, adsorption_data: dict, data_path=None) -
     for species in ['NH3', 'NH2', 'NH', 'N', 'N2', 'H']:
         if species in adsorption_data:
             replacement_dict[f"{species}(T)"] = adsorption_data[species][2]
-    E_N_N = 2 * adsorption_data['N'][1] + gas_dict['N2'] +  E_slab 
+    E_N_N = 2 * adsorption_data['N'][1] + gas_dict['N2'] +  E_slab + 0.5
     
     replacement_dict['N_N(T)'] = E_N_N
     
@@ -1728,11 +1728,8 @@ def generate_replacement_dict(ef_value, adsorption_data: dict, data_path=None) -
     E2 = E_NH  + (-6.76668776)/2 - E_NH2  
     E3 = E_N   + (-6.76668776)/2 - E_NH  
 
-    # V1
-    # E4 = E_slab + gas_dict['N2'] - E_N_N - 1.0
-    
     # V2
-    E4 = E_slab + gas_dict['N2'] - (E_N_N + 0.5)
+    E4 = E_slab + gas_dict['N2'] - E_N_N 
 
 
     # BEP scaling Ea = a * ΔE + b
