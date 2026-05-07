@@ -1609,16 +1609,27 @@ def obtain_lowest_site(data_path, species, sites, EF):
     best_site = min(energy_dict, key=energy_dict.get)
     E_ads_best = energy_dict[best_site]
     
-    # V1
-    EADS_FLOOR = {
-        'H':   -1.0,
-        'NH3': -1.8,
-        'NH2': -4.0,
-        'NH':  -5.3,
-        'N':   -1.0,
-        'N2': -1.5
-    }
+    # # V1
+    # EADS_FLOOR = {
+    #     'H':   -1.0,
+    #     'NH3': -1.8,
+    #     'NH2': -4.0,
+    #     'NH':  -5.3,
+    #     'N':   -1.0,
+    #     'N2': -1.5
+    # }
     
+
+    # V4
+    EADS_FLOOR = {
+        'H':   -2.0,
+        'NH3': -2.8,
+        'NH2': -5.0,
+        'NH':  -6.3,
+        'N':   -2.0,
+        'N2': -2.5
+    }
+
     floor = EADS_FLOOR.get(species)
     E_ads_best = max(float(E_ads_best), floor)  # 若 E_ads_best < floor，则用 floor
     
